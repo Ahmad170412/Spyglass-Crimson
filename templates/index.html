@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spyglass-Crimson — Overview</title>
+  <meta name="description" content="Passive-first infrastructure reconnaissance for websites and IP addresses.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230A0909'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23EFE9E4'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23C41230'/%3E%3Cpath d='M16 3v5M16 24v5M3 16h5M24 16h5' stroke='%23EFE9E4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=5">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to dashboard</a>
+
+  <div class="app">
+    <aside class="rail" aria-label="Workspace">
+      <a class="brand" href="#overview" aria-label="Spyglass-Crimson home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="11.5" stroke="currentColor" stroke-width="1" opacity=".75"/>
+          <circle cx="16" cy="16" r="5" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <path d="M16 1.5v7M16 23.5v7M1.5 16h7M23.5 16h7" stroke="currentColor" stroke-width="1" opacity=".75"/>
+          <circle cx="16" cy="16" r="2.2" fill="var(--crimson)"/>
+        </svg>
+        <span class="brand-text">
+          <span class="brand-name">Spyglass</span>
+          <span class="brand-sub">Crimson</span>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Sections">
+        <a class="nav-item is-active" href="#overview" data-view="overview" aria-current="page">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2" y="2" width="5" height="5" stroke="currentColor"/>
+            <rect x="9" y="2" width="5" height="5" stroke="currentColor"/>
+            <rect x="2" y="9" width="5" height="5" stroke="currentColor"/>
+            <rect x="9" y="9" width="5" height="5" stroke="currentColor"/>
+          </svg>
+          Overview
+        </a>
+        <a class="nav-item" href="#website" data-view="website">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.75" stroke="currentColor"/>
+            <path d="M2.4 8h11.2M8 2.25c1.7 1.6 2.6 3.6 2.6 5.75S9.7 12.15 8 13.75C6.3 12.15 5.4 10.15 5.4 8S6.3 3.85 8 2.25Z" stroke="currentColor"/>
+          </svg>
+          Website
+        </a>
+        <a class="nav-item" href="#ip" data-view="ip">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="3.25" r="1.75" stroke="currentColor"/>
+            <circle cx="3.25" cy="12.25" r="1.75" stroke="currentColor"/>
+            <circle cx="12.75" cy="12.25" r="1.75" stroke="currentColor"/>
+            <path d="M7 4.8 4 10.8M9 4.8l3 6M5 12.25h6" stroke="currentColor"/>
+          </svg>
+          IP
+        </a>
+        <a class="nav-item" href="#settings" data-view="settings">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 4.5h12M2 8h12M2 11.5h12" stroke="currentColor"/>
+            <circle cx="5.5" cy="4.5" r="1.5" fill="var(--rail)" stroke="currentColor"/>
+            <circle cx="10.5" cy="8" r="1.5" fill="var(--rail)" stroke="currentColor"/>
+            <circle cx="6.5" cy="11.5" r="1.5" fill="var(--rail)" stroke="currentColor"/>
+          </svg>
+          Settings
+        </a>
+        <a class="nav-item" href="#results" data-view="results">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2.5" y="2" width="11" height="12" rx="1" stroke="currentColor"/>
+            <path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor"/>
+          </svg>
+          Results
+        </a>
+      </nav>
+
+    </aside>
+
+    <main class="main" id="main" tabindex="-1">
+      <div class="canvas">
+
+        <!-- Overview ------------------------------------------------- -->
+        <section class="view is-active" id="view-overview" data-view-panel="overview" aria-labelledby="overviewTitle">
+          <header class="view-head">
+            <h1 id="overviewTitle">Overview</h1>
+            <p>What this installation can see right now. Passive sources need no keys.</p>
+          </header>
+
+          <section class="block" aria-labelledby="sourcesTitle">
+            <div class="block-head">
+              <h2 id="sourcesTitle">Data sources</h2>
+              <div class="meter-wrap">
+              <span class="meter-label" id="sourceCount">Loading…</span>
+              <span class="meter" id="readinessBar" role="img" aria-label="Loading source readiness">
+                <span class="meter-seg"></span>
+                <span class="meter-seg"></span>
+                <span class="meter-seg"></span>
+                <span class="meter-seg"></span>
+                <span class="meter-seg"></span>
+              </span>
+              </div>
+            </div>
+
+            <div data-source-list>
+              <p class="form-note">Loading sources…</p>
+            </div>
+          </section>
+
+          <section class="block" aria-labelledby="scannersTitle">
+            <div class="block-head">
+              <h2 id="scannersTitle">Local scanners</h2>
+              <span class="block-meta">Aggressive tools</span>
+            </div>
+
+            <div class="source-list">
+              <div class="source-row">
+                <div class="source-main">
+                  <span class="source-name">nmap</span>
+                  <span class="source-detail">Port and service discovery</span>
+                </div>
+                <span class="source-state">
+                  <span class="status status--active"><span class="status-dot"></span>Found</span>
+                  <span class="source-version">7.99</span>
+                </span>
+              </div>
+
+              <div class="source-row">
+                <div class="source-main">
+                  <span class="source-name">nuclei</span>
+                  <span class="source-detail">Web vulnerability templates</span>
+                </div>
+                <span class="source-state">
+                  <span class="status status--active"><span class="status-dot"></span>Found</span>
+                </span>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <!-- Website -------------------------------------------------- -->
+        <section class="view" id="view-website" data-view-panel="website" aria-labelledby="websiteTitle" hidden>
+          <header class="view-head">
+            <h1 id="websiteTitle">Website</h1>
+            <p>Public records for a domain, with optional active probes.</p>
+          </header>
+
+          <form class="scan" data-scan="website" novalidate>
+            <div class="scan-head">
+              <label class="field-label" for="websiteTarget">Target</label>
+              <span class="scan-hint">Domain or public URL</span>
+            </div>
+
+            <div class="target-row">
+              <div class="target-field">
+                <span class="target-sight-box">
+                  <svg class="target-sight" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="10" cy="10" r="6.2" stroke="currentColor"/>
+                    <path d="M10 1v4M10 15v4M1 10h4M15 10h4" stroke="currentColor"/>
+                    <circle cx="10" cy="10" r="1.3" fill="currentColor"/>
+                  </svg>
+                </span>
+                <input class="target-input" id="websiteTarget" type="text" placeholder="example.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="mode-row">
+              <div class="mode-copy">
+                <span class="field-label">Mode</span>
+                <p class="mode-note" data-mode-note>Public records only. No packets are sent to the target.</p>
+              </div>
+              <div class="scope-switch" role="group" aria-label="Scan mode">
+                <button class="scope-opt is-selected" type="button" data-mode="passive" aria-pressed="true">Passive</button>
+                <button class="scope-opt" type="button" data-mode="aggressive" aria-pressed="false">Aggressive</button>
+              </div>
+            </div>
+
+            <div class="auth-strip" data-auth-strip hidden>
+              <p><strong>Aggressive mode.</strong> Probes are sent from this machine to the target. Only continue on infrastructure you own or have written permission to test.</p>
+              <label class="auth-check">
+                <input type="checkbox" data-auth-check>
+                I have authorization
+              </label>
+            </div>
+
+            <div class="tool-group">
+              <div class="group-head">
+                <h2>Passive tools</h2>
+                <span>No packets sent</span>
+              </div>
+
+              <label class="tool-row">
+                <input type="checkbox" name="website-tool" value="whois" checked>
+                <span class="tool-main">
+                  <span class="tool-name">WHOIS</span>
+                  <span class="tool-desc">Registrar, key dates, nameservers</span>
+                </span>
+                <span class="tool-tag">RDAP</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="website-tool" value="dns" checked>
+                <span class="tool-main">
+                  <span class="tool-name">DNS records</span>
+                  <span class="tool-desc">A, AAAA, MX, TXT, CAA</span>
+                </span>
+                <span class="tool-tag">DoH</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="website-tool" value="ct" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Certificate logs</span>
+                  <span class="tool-desc">Hostnames published in CT logs</span>
+                </span>
+                <span class="tool-tag">crt.sh</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="website-tool" value="subdomains" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Subdomains</span>
+                  <span class="tool-desc">Passive DNS and certificate hosts</span>
+                </span>
+                <span class="tool-tag">Passive</span>
+              </label>
+            </div>
+
+            <div class="tool-group">
+              <div class="group-head">
+                <h2>Aggressive tools</h2>
+                <span>Sends probes</span>
+              </div>
+
+              <label class="tool-row is-locked" data-aggressive>
+                <input type="checkbox" name="website-tool" value="nmap" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">Port scan</span>
+                  <span class="tool-desc">Top 1,000 TCP ports</span>
+                </span>
+                <span class="tool-tag">nmap</span>
+              </label>
+
+              <label class="tool-row is-locked" data-aggressive>
+                <input type="checkbox" name="website-tool" value="nuclei" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">Vulnerability templates</span>
+                  <span class="tool-desc">Web checks from the nuclei library</span>
+                </span>
+                <span class="tool-tag">nuclei</span>
+              </label>
+            </div>
+
+            <div class="scan-foot">
+              <span class="scan-summary" data-scan-summary>4 tools selected</span>
+              <button class="btn-primary" type="submit" data-run>Run passive recon</button>
+            </div>
+
+            <p class="form-note" data-form-note role="status" hidden></p>
+          </form>
+        </section>
+
+        <!-- IP ------------------------------------------------------- -->
+        <section class="view" id="view-ip" data-view-panel="ip" aria-labelledby="ipTitle" hidden>
+          <header class="view-head">
+            <h1 id="ipTitle">IP address</h1>
+            <p>Look up a single address, CIDR range, or ASN.</p>
+          </header>
+
+          <form class="scan" data-scan="ip" novalidate>
+            <div class="scan-head">
+              <label class="field-label" for="ipTarget">Target</label>
+              <span class="scan-hint">IP, CIDR, or ASN</span>
+            </div>
+
+            <div class="target-row">
+              <div class="target-field">
+                <span class="target-sight-box">
+                  <svg class="target-sight" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="10" cy="10" r="6.2" stroke="currentColor"/>
+                    <path d="M10 1v4M10 15v4M1 10h4M15 10h4" stroke="currentColor"/>
+                    <circle cx="10" cy="10" r="1.3" fill="currentColor"/>
+                  </svg>
+                </span>
+                <input class="target-input" id="ipTarget" type="text" placeholder="8.8.8.8 or AS15169" autocomplete="off" autocapitalize="off" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="mode-row">
+              <div class="mode-copy">
+                <span class="field-label">Mode</span>
+                <p class="mode-note" data-mode-note>Public records only. No packets are sent to the target.</p>
+              </div>
+              <div class="scope-switch" role="group" aria-label="Scan mode">
+                <button class="scope-opt is-selected" type="button" data-mode="passive" aria-pressed="true">Passive</button>
+                <button class="scope-opt" type="button" data-mode="aggressive" aria-pressed="false">Aggressive</button>
+              </div>
+            </div>
+
+            <div class="auth-strip" data-auth-strip hidden>
+              <p><strong>Aggressive mode.</strong> Probes are sent from this machine to the target. Only continue on infrastructure you own or have written permission to test.</p>
+              <label class="auth-check">
+                <input type="checkbox" data-auth-check>
+                I have authorization
+              </label>
+            </div>
+
+            <div class="tool-group">
+              <div class="group-head">
+                <h2>Passive tools</h2>
+                <span>No packets sent</span>
+              </div>
+
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="whois" checked>
+                <span class="tool-main">
+                  <span class="tool-name">WHOIS</span>
+                  <span class="tool-desc">Allocation, abuse contacts, netblock</span>
+                </span>
+                <span class="tool-tag">RDAP</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="ptr" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Reverse DNS</span>
+                  <span class="tool-desc">PTR records for the address</span>
+                </span>
+                <span class="tool-tag">PTR</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="asn" checked>
+                <span class="tool-main">
+                  <span class="tool-name">ASN &amp; Geo</span>
+                  <span class="tool-desc">Origin network, country, city</span>
+                </span>
+                <span class="tool-tag">RIPE</span>
+              </label>
+
+              <label class="tool-row is-locked" data-requires-source="shodan" title="Add a Shodan key in Settings">
+                <input type="checkbox" name="ip-tool" value="shodan" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">Shodan host</span>
+                  <span class="tool-desc">Banners and exposed services</span>
+                </span>
+                <span class="tool-tag" data-source-tag>Key needed</span>
+              </label>
+            </div>
+
+            <div class="tool-group">
+              <div class="group-head">
+                <h2>Aggressive tools</h2>
+                <span>Sends probes</span>
+              </div>
+
+              <label class="tool-row is-locked" data-aggressive>
+                <input type="checkbox" name="ip-tool" value="nmap" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">Port &amp; service scan</span>
+                  <span class="tool-desc">Common TCP ports with version detection</span>
+                </span>
+                <span class="tool-tag">nmap</span>
+              </label>
+
+              <label class="tool-row is-locked" data-aggressive>
+                <input type="checkbox" name="ip-tool" value="tls" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">TLS probe</span>
+                  <span class="tool-desc">Handshake and certificate details</span>
+                </span>
+                <span class="tool-tag">openssl</span>
+              </label>
+            </div>
+
+            <div class="scan-foot">
+              <span class="scan-summary" data-scan-summary>3 tools selected</span>
+              <button class="btn-primary" type="submit" data-run>Run passive recon</button>
+            </div>
+
+            <p class="form-note" data-form-note role="status" hidden></p>
+          </form>
+        </section>
+
+        <!-- Results -------------------------------------------------- -->
+        <section class="view" id="view-results" data-view-panel="results" aria-labelledby="resultsTitle" hidden>
+          <header class="view-head">
+            <h1 id="resultsTitle">Results</h1>
+            <p>Findings from your most recent run, grouped by entity type.</p>
+          </header>
+
+          <div data-results-host>
+            <p class="form-note">Loading…</p>
+          </div>
+
+          <div class="scan-foot">
+            <span class="scan-summary">Run history is kept locally</span>
+            <button class="btn-secondary" type="button" data-refresh-results>Refresh</button>
+          </div>
+        </section>
+
+        <!-- Settings ------------------------------------------------- -->
+        <section class="view" id="view-settings" data-view-panel="settings" aria-labelledby="settingsTitle" hidden>
+          <header class="view-head">
+            <h1 id="settingsTitle">Settings</h1>
+            <p>Connect API keys and check what this machine can run.</p>
+          </header>
+
+          <section class="block" aria-labelledby="keysTitle">
+            <div class="block-head">
+              <h2 id="keysTitle">API keys</h2>
+              <span class="block-meta">Optional</span>
+            </div>
+
+            <div class="key-block">
+              <div class="key-head">
+                <div class="key-info">
+                  <h3>Shodan</h3>
+                  <p>Exposed services, banners, and organisation metadata.</p>
+                </div>
+                <span class="key-state" data-key-state="shodan"><span class="status-dot"></span>Not configured</span>
+              </div>
+              <div class="key-form">
+                <label class="sr-only" for="shodanKey">Shodan API key</label>
+                <input id="shodanKey" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false">
+                <button class="btn-secondary" type="button" data-save-key="shodan">Save key</button>
+                <button class="btn-ghost" type="button" data-test-key="shodan">Test</button>
+                <button class="btn-ghost" type="button" data-remove-key="shodan">Remove</button>
+              </div>
+              <p class="key-result" data-key-result="shodan"></p>
+            </div>
+
+            <div class="key-block">
+              <div class="key-head">
+                <div class="key-info">
+                  <h3>Censys</h3>
+                  <p>Certificates, hosts, and service banners.</p>
+                </div>
+                <span class="key-state" data-key-state="censys"><span class="status-dot"></span>Not configured</span>
+              </div>
+              <div class="key-form">
+                <label class="sr-only" for="censysKey">Censys API key</label>
+                <input id="censysKey" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false">
+                <button class="btn-secondary" type="button" data-save-key="censys">Save key</button>
+                <button class="btn-ghost" type="button" data-test-key="censys">Test</button>
+                <button class="btn-ghost" type="button" data-remove-key="censys">Remove</button>
+              </div>
+              <p class="key-result" data-key-result="censys"></p>
+            </div>
+
+            <div class="key-block">
+              <div class="key-head">
+                <div class="key-info">
+                  <h3>IPinfo</h3>
+                  <p>ASN, country, and continent enrichment.</p>
+                </div>
+                <span class="key-state" data-key-state="ipinfo"><span class="status-dot"></span>Not configured</span>
+              </div>
+              <div class="key-form">
+                <label class="sr-only" for="ipinfoKey">IPinfo token</label>
+                <input id="ipinfoKey" type="password" placeholder="Paste access token" autocomplete="off" spellcheck="false">
+                <button class="btn-secondary" type="button" data-save-key="ipinfo">Save key</button>
+                <button class="btn-ghost" type="button" data-test-key="ipinfo">Test</button>
+                <button class="btn-ghost" type="button" data-remove-key="ipinfo">Remove</button>
+              </div>
+              <p class="key-result" data-key-result="ipinfo"></p>
+            </div>
+
+            <div class="key-block">
+              <div class="key-head">
+                <div class="key-info">
+                  <h3>AlienVault OTX</h3>
+                  <p>Passive DNS history for subdomain pivots.</p>
+                </div>
+                <span class="key-state" data-key-state="otx"><span class="status-dot"></span>Not configured</span>
+              </div>
+              <div class="key-form">
+                <label class="sr-only" for="otxKey">AlienVault OTX API key</label>
+                <input id="otxKey" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false">
+                <button class="btn-secondary" type="button" data-save-key="otx">Save key</button>
+                <button class="btn-ghost" type="button" data-test-key="otx">Test</button>
+                <button class="btn-ghost" type="button" data-remove-key="otx">Remove</button>
+              </div>
+              <p class="key-result" data-key-result="otx"></p>
+            </div>
+
+            <div class="key-block">
+              <div class="key-head">
+                <div class="key-info">
+                  <h3>urlscan.io</h3>
+                  <p>Historical page scans and metadata.</p>
+                </div>
+                <span class="key-state" data-key-state="urlscan"><span class="status-dot"></span>Not configured</span>
+              </div>
+              <div class="key-form">
+                <label class="sr-only" for="urlscanKey">urlscan.io API key</label>
+                <input id="urlscanKey" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false">
+                <button class="btn-secondary" type="button" data-save-key="urlscan">Save key</button>
+                <button class="btn-ghost" type="button" data-test-key="urlscan">Test</button>
+                <button class="btn-ghost" type="button" data-remove-key="urlscan">Remove</button>
+              </div>
+              <p class="key-result" data-key-result="urlscan"></p>
+            </div>
+          </section>
+
+          <p class="settings-note">Keys are stored in your local keychain (or an encrypted file) and are only ever sent to their own provider. They are never written to the database and never returned to the browser.</p>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=5"></script>
+</body>
+</html>
