@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -24,7 +25,15 @@ def test_credential_file_fallback(tmp_path, monkeypatch):
     assert store.get("shodan") == "local-secret"
     assert store.configured()["shodan"] is True
     assert store.backend == "file"
-    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    # The credential file must not be readable by anyone but the owner. Only
+    # POSIX exposes that as mode bits: Windows has no POSIX permission model
+    # and os.stat() synthesizes 0o666 for any writable file there, so the
+    # check is meaningful exactly where the mode bits are real. On Windows the
+    # file sits under the user profile and is governed by NTFS ACLs.
+    if os.name == "posix":
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
+    else:
+        assert path.is_file()
     assert "local-secret" not in json.dumps(store.public_status())
 
     monkeypatch.setenv("SPYGLASS_SHODAN_KEY", "env-secret")
