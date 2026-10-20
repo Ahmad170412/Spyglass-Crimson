@@ -206,12 +206,21 @@ Every setting has a working default. **All API keys are optional** — the tool 
 | `SPYGLASS_HTTP_TIMEOUT` | No | `10` | Per-request timeout, in seconds |
 | `SPYGLASS_HTTP_RETRIES` | No | `1` | Retries for transient transport errors |
 | `SPYGLASS_MAX_IPS` | No | `25` | Cap on addresses sampled from a CIDR |
-| `SPYGLASS_USER_AGENT` | No | `Spyglass-Crimson/0.2` | Identify yourself to upstream APIs |
+| `SPYGLASS_MAX_CIDR_HOSTS` | No | `512` | Largest CIDR that will be expanded |
+| `SPYGLASS_MAX_CT_NAMES` | No | `200` | Cap on hostnames kept from CT logs |
+| `SPYGLASS_MAX_CT_CERTS` | No | `500` | Cap on certificates parsed from CT logs |
+| `SPYGLASS_MAX_WAYBACK_URLS` | No | `500` | Cap on archived URLs kept from Wayback |
+| `SPYGLASS_MAX_ASN_PREFIXES` | No | `100` | Cap on announced prefixes per ASN |
+| `SPYGLASS_MAX_CENSYS_LOOKUPS` | No | `10` | Credit cap on Censys lookups per run |
+| `SPYGLASS_USER_AGENT` | No | `Spyglass-Crimson/0.2 (passive OSINT; local tool)` | Identify yourself to upstream APIs |
 | `SPYGLASS_DNS_TTL` | No | `3600` | DNS cache TTL, in seconds |
 | `SPYGLASS_CT_TTL` | No | `43200` | Certificate-transparency cache TTL |
 | `SPYGLASS_RDAP_TTL` | No | `86400` | RDAP cache TTL |
 | `SPYGLASS_INTERNETDB_TTL` | No | `86400` | InternetDB cache TTL |
 | `SPYGLASS_WAYBACK_TTL` | No | `86400` | Wayback cache TTL |
+| `SPYGLASS_ROUTING_TTL` | No | `21600` | ASN/routing cache TTL |
+| `SPYGLASS_BOOTSTRAP_TTL` | No | `86400` | Bootstrap/registry cache TTL |
+| `SPYGLASS_WAYBACK_TIMEOUT` | No | `30` | Timeout for the Wayback CDX index, in seconds |
 
 ```bash
 # Linux / macOS
@@ -243,11 +252,18 @@ curl -s -X POST http://127.0.0.1:5000/api/runs \
 {
   "id": "82288a06c4f8",
   "target": "example.com",
-  "target_kind": "domain",
-  "plan": ["rdap", "dns", "ct", "wayback", "subdomains"],
+  "plan": [
+    "rdap", "dns", "ct", "wayback",
+    "censys", "otx", "urlscan",
+    "subdomains"
+  ],
   "status": "queued"
 }
 ```
+
+The plan is the full source list for the target's kind. Keyed sources appear
+in it and are skipped at run time with a recorded reason if no key is
+configured.
 
 ### IP recon
 
