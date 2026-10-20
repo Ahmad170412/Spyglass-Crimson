@@ -28,6 +28,10 @@ Recon a domain or an IP address from public records alone: registration, DNS, ce
 - **Keys stay off disk and off the wire** — provider keys resolve from environment → OS keyring → a `0600` fallback file, never enter SQLite, and are never returned by the API.
 - **One local app, no telemetry** — a single Flask process on `127.0.0.1`. It talks to public datasets and nowhere else.
 
+<p align="center">
+  <img src="assets/overview.png" alt="Spyglass-Crimson overview showing 8 core and 5 enrichment data sources with their live status" width="820"/>
+</p>
+
 ---
 
 ## Table of Contents
@@ -223,6 +227,10 @@ Prefer the dashboard? **Settings → Add key** stores the value in your OS keyri
 
 ## Usage
 
+<p align="center">
+  <img src="assets/website-form.png" alt="Website recon form with a blank target field, passive and aggressive mode toggle, and per-tool checkboxes" width="820"/>
+</p>
+
 ### Website recon
 
 ```bash
@@ -250,6 +258,10 @@ curl -s -X POST http://127.0.0.1:5000/api/runs \
 ```
 
 ### Read the results
+
+<p align="center">
+  <img src="assets/results.png" alt="Results view listing each source's status and the entities extracted, grouped by type" width="820"/>
+</p>
 
 ```bash
 curl -s http://127.0.0.1:5000/api/runs/82288a06c4f8/results
