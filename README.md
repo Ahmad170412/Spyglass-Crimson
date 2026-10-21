@@ -4,15 +4,18 @@
 
 # Spyglass-Crimson
 
-**Passive OSINT for domains and IPs — 13 data sources, zero packets sent to the target.**  
-Recon a domain or an IP address from public records alone: registration, DNS, certificate transparency, routing, and historical URLs, correlated into one normalised entity graph.
+**v1.0.0 “Crystal Pudding” · private beta** — not yet published or announced.
+
+**Passive OSINT for domains and IPs — 18 data sources, three gated active modules when you ask for them.**  
+Recon a domain or an IP address from public records alone: registration, DNS, certificate transparency, routing, historical URLs, reputation, and anonymity signals, correlated into one normalised entity graph.
 
 [![CI](https://github.com/Ahmad170412/Spyglass-Crimson/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahmad170412/Spyglass-Crimson/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-06b6d4.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
-[![Tests](https://img.shields.io/badge/tests-60%20passed-06b6d4)](https://github.com/Ahmad170412/Spyglass-Crimson/actions)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Tests](https://img.shields.io/badge/tests-123%20passed-06b6d4)](https://github.com/Ahmad170412/Spyglass-Crimson/actions)
+[![Status](https://img.shields.io/badge/status-private%20beta-8b5cf6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-06b6d4)](CHANGELOG.md)
 
 [**Report Bug**](../../issues) · [**Request Feature**](../../issues) · [**Ethics & Acceptable Use**](ETHICS.md)
 
@@ -20,22 +23,43 @@ Recon a domain or an IP address from public records alone: registration, DNS, ce
 
 ---
 
+## Project status
+
+Spyglass-Crimson is at **v1.0.0 in private beta**. The repository is not public
+yet: nothing has been announced, there are no support commitments, and the API,
+database schema, and source list may still change before publication. The test
+suite runs on Linux and Windows across Python 3.9–3.12.
+
+What the beta label means in practice:
+
+- **It runs end to end** and is safe to point at infrastructure you own.
+- **The source list is settled** — 10 keyless core sources, 5 optional enrichment
+  providers, and 3 gated active modules. These are the numbers this release is
+  judged on.
+- **Active means authorized and bounded.** The optional modules are an HTTPS probe,
+  a top-100 TCP port scan (`nmap`), and curated template checks (`nuclei`). They
+  run only with a recorded authorization for that exact target, refuse non-public
+  address space, and are capped by time, rate, and scope. Port scanning without
+  authorization may be illegal — see [ETHICS.md](ETHICS.md).
+- **No authentication.** The server is loopback-only by design; do not expose it.
+
 ## Why Spyglass-Crimson?
 
-- **Zero-key by default** — 8 of 13 sources need no account, no API key, and no configuration. Clone, run, and it works.
-- **Passive, provably** — it queries *third-party* public indexes (RDAP, crt.sh, DoH resolvers, Wayback). It never connects to your target. The aggressive mode is gated behind a recorded authorization and is not wired to a scanner.
-- **Honest partial results** — every source reports `ok`, `partial`, `empty`, `skipped`, or `error` with a reason. A source that needs a key says *"no API key configured"* instead of silently vanishing.
+- **Zero-key by default** — 10 of 18 sources need no account, no API key, and no configuration. Clone, run, and it works.
+- **Passive by default, provably** — it queries *third-party* public indexes (RDAP, crt.sh, DoH resolvers, Wayback, Tor, Spamhaus). It never connects to your target unless you explicitly enable an active module, and only after you record an authorization for that exact target.
+- **Honest partial results** — every source reports `ok`, `partial`, `empty`, `not_found`, `skipped`, or `error` with a reason. A source that needs a key says *"no API key configured"* instead of silently vanishing.
 - **Keys stay off disk and off the wire** — provider keys resolve from environment → OS keyring → a `0600` fallback file, never enter SQLite, and are never returned by the API.
-- **One local app, no telemetry** — a single Flask process on `127.0.0.1`. It talks to public datasets and nowhere else.
+- **One local app, no telemetry** — a single Flask process on `127.0.0.1`. It talks to public datasets, and to the target only when you explicitly authorize an active module.
 
 <p align="center">
-  <img src="assets/overview.png" alt="Spyglass-Crimson overview showing 8 core and 5 enrichment data sources with their live status" width="820"/>
+  <img src="assets/overview.png" alt="Spyglass-Crimson overview listing the core, enrichment, and aggressive data sources" width="820"/>
 </p>
 
 ---
 
 ## Table of Contents
 
+- [Project status](#project-status)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Features](#features)
@@ -62,7 +86,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open <http://127.0.0.1:5000>, enter a domain or IP in the **Website** or **IP** tab, and press **Run Passive Recon**. No API keys required.
+Open <http://127.0.0.1:5000>, enter a domain or IP in the **Website** or **IP** tab, and press **Run passive recon**. No API keys required.
 
 ```bash
 # Or drive it from the terminal — same orchestrator, same results
@@ -81,7 +105,7 @@ curl -s http://127.0.0.1:5000/api/runs/<run_id>/results
 ```text
                         ┌──────────────────────────────────────┐
    domain / IP  ───────▶│  Orchestrator  (spyglass/orchestrator)│
-                        │  plan → budget → parallel sources    │
+                        │  plan → budget → sources            │
                         └───────────────┬──────────────────────┘
                                         │
         ┌───────────────┬───────────────┼───────────────┬───────────────┐
@@ -107,10 +131,11 @@ curl -s http://127.0.0.1:5000/api/runs/<run_id>/results
                    └─────────────────────┘
 ```
 
-Two rules shape the whole design:
+Three rules shape the whole design:
 
-1. **A failing source never kills a run.** Each source runs under its own timeout and error handler; a timeout is recorded as `error` with the elapsed budget, and the run continues.
+1. **A failing source never kills a run.** Each source runs under its own timeout and error handler; a timeout is recorded as `error` with the elapsed budget, and the run continues. Per-source health is persisted so the dashboard can show a source that is currently failing.
 2. **Derived sources run last.** `subdomains` depends on certificate-transparency output, so the orchestrator defers it until every independent source has finished.
+3. **Only active modules talk to the target.** `http`, `nmap`, and `nuclei` are planned only when the caller asks for an aggressive run *and* a recorded authorization covers the target — re-checked again at execution time. Everything else queries third-party indexes.
 
 ---
 
@@ -119,15 +144,15 @@ Two rules shape the whole design:
 | Feature | Description |
 |---|---|
 | **Website recon** | Domain or public URL → registration, DNS, CT, subdomains, historical URLs |
-| **IP recon** | IPv4, IPv6, CIDR, or ASN → RDAP, routing, PTR, InternetDB |
-| **13 registered sources** | 8 keyless core + 5 optional-key enrichment providers |
+| **IP recon** | IPv4, IPv6, CIDR, or ASN → RDAP, routing, PTR, InternetDB, Tor exit status, Spamhaus DROP |
+| **18 registered sources** | 10 keyless core + 5 optional-key enrichment + 3 gated active modules |
 | **Normalised entities** | `hostname`, `ip`, `certificate`, `registration`, `dns`, `asn`, `host`, `enrichment` — one shape across every source |
 | **Explicit skip reasons** | Keyed sources report *why* they were skipped, never fail silently |
 | **Run history** | Every run, its per-source status, and its results persist locally and reload on page open |
 | **Key management** | Save, test, and remove provider keys from the dashboard; values never reach the browser |
 | **Run budget** | Configurable wall-clock budget caps a run; exhausted sources are marked, not retried |
 | **Response cache** | Per-source TTL cache in SQLite keeps repeat lookups fast and polite to upstream APIs |
-| **Aggressive gate** | Active modes require a recorded, unexpired authorization for that exact target |
+| **Aggressive gate** | Every active module requires a recorded, unexpired authorization for that exact target |
 
 ### Core sources (no key required)
 
@@ -141,6 +166,8 @@ Two rules shape the whole design:
 | Reverse DNS | DoH | PTR records for an address |
 | Shodan InternetDB | `internetdb.shodan.io` | Keyless ports, hostnames, tags, and CVEs |
 | Historical URLs | Wayback CDX | Archived URLs and historical hosts |
+| Tor exits | `check.torproject.org` | Whether an IPv4 address is a current Tor exit node |
+| Spamhaus DROP | `spamhaus.org/drop` | Hijacked and bulletproof-hosting netblocks |
 
 ### Enrichment sources (optional key)
 
@@ -152,11 +179,29 @@ Two rules shape the whole design:
 | AlienVault OTX | `SPYGLASS_OTX_KEY` | Passive DNS history for subdomain pivots |
 | urlscan.io | `SPYGLASS_URLSCAN_KEY` | Historical page scans and metadata |
 
+### Aggressive modules (authorization required)
+
+| Source | Sends | What it contributes |
+|---|---|---|
+| HTTP probe | One HTTPS `GET` to `/` | Status code, server, content type, page title, redirect target, and which security headers are missing |
+| Port scan (`nmap`) | Top 100 TCP connect ports, one host | Open ports with service guesses; no OS detection, NSE scripts, UDP, or host-discovery sweeps |
+| Template checks (`nuclei`) | Curated, rate-limited HTTP templates, one host | Detection-only findings from `cve`, `exposure`, `misconfig`, `tech`, `headers`, and `ssl` templates |
+
+All three refuse any address that is not globally routable (loopback, RFC 1918,
+CGNAT, link-local, reserved) and refuse to run unless a recorded, unexpired
+authorization exists for that exact target — checked server-side when the plan is
+built, again at execution, and again inside each module. The HTTP probe follows no
+redirects and reads at most 64 KiB; nmap is capped at the top 100 ports and 30
+seconds; nuclei is capped at 20 requests per second, 30 seconds, 50 findings, with
+`dos`, `fuzz`, `intrusive`, `brute-force`, and `default-login` templates excluded
+and out-of-band interaction disabled. Active modules never accept CIDR or ASN
+ranges. See [ETHICS.md](ETHICS.md).
+
 ---
 
 ## Installation
 
-Requires **Python 3.9 or newer** (verified on 3.9 and 3.11) and a POSIX-ish or Windows host. The tool is a local server — there is no PyPI package and nothing to install globally.
+Requires **Python 3.9 or newer** (verified on 3.9 through 3.12) and a POSIX-ish or Windows host. The tool is a local server — there is no PyPI package and nothing to install globally.
 
 ### From source (recommended)
 
@@ -212,7 +257,7 @@ Every setting has a working default. **All API keys are optional** — the tool 
 | `SPYGLASS_MAX_WAYBACK_URLS` | No | `500` | Cap on archived URLs kept from Wayback |
 | `SPYGLASS_MAX_ASN_PREFIXES` | No | `100` | Cap on announced prefixes per ASN |
 | `SPYGLASS_MAX_CENSYS_LOOKUPS` | No | `10` | Credit cap on Censys lookups per run |
-| `SPYGLASS_USER_AGENT` | No | `Spyglass-Crimson/0.2 (passive OSINT; local tool)` | Identify yourself to upstream APIs |
+| `SPYGLASS_USER_AGENT` | No | `Spyglass-Crimson/1.0.0 (passive OSINT; local tool)` | Identify yourself to upstream APIs |
 | `SPYGLASS_DNS_TTL` | No | `3600` | DNS cache TTL, in seconds |
 | `SPYGLASS_CT_TTL` | No | `43200` | Certificate-transparency cache TTL |
 | `SPYGLASS_RDAP_TTL` | No | `86400` | RDAP cache TTL |
@@ -221,6 +266,16 @@ Every setting has a working default. **All API keys are optional** — the tool 
 | `SPYGLASS_ROUTING_TTL` | No | `21600` | ASN/routing cache TTL |
 | `SPYGLASS_BOOTSTRAP_TTL` | No | `86400` | Bootstrap/registry cache TTL |
 | `SPYGLASS_WAYBACK_TIMEOUT` | No | `30` | Timeout for the Wayback CDX index, in seconds |
+| `SPYGLASS_TOR_TTL` | No | `3600` | Tor exit-list cache TTL |
+| `SPYGLASS_DROP_TTL` | No | `86400` | Spamhaus DROP cache TTL |
+| `SPYGLASS_AUTHORIZATION_TTL` | No | `30` | Default authorization lifetime, in days |
+| `SPYGLASS_NMAP_TOP_PORTS` | No | `100` | Ports scanned per nmap run (hard cap `1000`) |
+| `SPYGLASS_NMAP_TIMEOUT` | No | `30` | nmap host timeout, in seconds |
+| `SPYGLASS_NUCLEI_TIMEOUT` | No | `30` | nuclei per-request timeout, in seconds |
+| `SPYGLASS_NUCLEI_RATE_LIMIT` | No | `20` | nuclei requests per second (hard cap `100`) |
+| `SPYGLASS_MAX_NUCLEI_FINDINGS` | No | `50` | Findings recorded per nuclei run |
+| `SPYGLASS_NUCLEI_EXCLUDE_TAGS` | No | `dos,fuzz,intrusive,brute-force,default-login` | Template tags to exclude |
+| `SPYGLASS_ALLOWED_HOSTS` | No | `127.0.0.1,localhost,::1` | Host headers the dashboard accepts (DNS-rebinding guard) |
 
 ```bash
 # Linux / macOS
@@ -273,6 +328,46 @@ curl -s -X POST http://127.0.0.1:5000/api/runs \
   -d '{"target":"1.1.1.1","mode":"passive"}'
 ```
 
+### Choose sources
+
+Pass `sources` to narrow the passive plan. Enrichment providers stay planned (and
+report their own skip reason when no key is configured), and derived sources such
+as `subdomains` always run last.
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"example.com","mode":"website","sources":["rdap","ct"]}'
+```
+
+### Aggressive run (authorization required)
+
+The active modules send real traffic: one HTTPS request, a bounded top-100 TCP
+connect scan, and rate-limited template checks. Record an authorization for the
+exact target first, then ask for an aggressive run:
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/api/authorizations \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"example.com","note":"client engagement 2026-004","ttl_days":14}'
+
+curl -s -X POST http://127.0.0.1:5000/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"example.com","mode":"website","aggressive":true}'
+```
+
+Without a matching, unexpired record the second call returns `403`. The plan gains
+`http`, `nmap`, and `nuclei`; each records a skip reason if its binary is not
+installed. `sources` narrows the passive plan only — active modules are opt-in via
+`aggressive`. Pass `active_sources` to run only some of them, for example
+`{"target":"example.com","aggressive":true,"active_sources":["nmap"]}`.
+Installing the scanners is optional:
+
+```bash
+brew install nmap nuclei     # macOS
+nuclei -update-templates     # one-time template download
+```
+
 ### Read the results
 
 <p align="center">
@@ -308,7 +403,7 @@ curl -s http://127.0.0.1:5000/api/runs/82288a06c4f8/results
 | `GET` | `/api/health` | Liveness, database state, source count |
 | `GET` | `/api/sources` | Source registry with per-source health |
 | `GET` | `/api/sources/<id>` | One source's metadata |
-| `POST` | `/api/runs` | Start a run (`target`, `mode`, `layer`) |
+| `POST` | `/api/runs` | Start a run (`target`, `mode`, `layer`, `sources`, `aggressive`, `active_sources`) |
 | `GET` | `/api/runs` | List recent runs |
 | `GET` | `/api/runs/<id>` | Run status and per-source summary |
 | `GET` | `/api/runs/<id>/results` | Full results: sources, entities, observations |
@@ -316,7 +411,7 @@ curl -s http://127.0.0.1:5000/api/runs/82288a06c4f8/results
 | `PUT` | `/api/credentials/<provider>` | Store a key |
 | `DELETE` | `/api/credentials/<provider>` | Remove a key |
 | `POST` | `/api/credentials/<provider>/test` | Validate a key against the provider |
-| `GET`/`POST` | `/api/authorizations` | Aggressive-mode authorization records |
+| `GET`/`POST` | `/api/authorizations` | Authorization records (`target`, optional `note`, optional `ttl_days`) |
 | `GET` | `/api/aggressive-gate` | Whether the current target is authorized |
 
 ---
@@ -344,8 +439,12 @@ pytest -k keyed              # only the enrichment-provider tests
 | `test_ct.py` | Certificate-transparency parsing |
 | `test_asn.py` | ASN and routing lookups |
 | `test_ptr_internetdb_wayback.py` | PTR, InternetDB, and Wayback sources |
+| `test_datasets.py` | Tor exit list and Spamhaus DROP: matching, caching, degraded datasets |
+| `test_http_probe.py` | HTTP probe: gate, private-address refusal, redirects, body cap |
+| `test_active_scanners.py` | nmap and nuclei: gate, binary checks, command bounds, XML/JSONL parsing, finding cap |
 | `test_keyed_sources.py` | All five enrichment providers: happy path, rejected key, caching |
 | `test_orchestrator.py` | Planning, budget enforcement, derived sources |
+| `test_hardening.py` | Host-header guard, authorization expiry, budget cutoff, source health, provenance, CIDR aggregation |
 | `test_run_api.py` | Run lifecycle through the REST API |
 | `test_storage_and_api.py` | Persistence, credentials, and API surface |
 
@@ -365,6 +464,8 @@ Spyglass-Crimson/
 ├── pytest.ini              # Test configuration
 ├── requirements.txt        # Runtime dependencies
 ├── requirements-dev.txt    # Test dependencies
+├── .github/
+│   └── workflows/ci.yml    # Test matrix: Ubuntu + Windows, Python 3.9–3.12
 ├── assets/
 │   ├── logo.svg            # Project logo
 │   ├── overview.png        # Source inventory
@@ -380,6 +481,7 @@ Spyglass-Crimson/
 │   ├── credentials.py      # Keyring-backed credential store
 │   ├── http.py             # httpx wrapper with retries and caching
 │   ├── models.py           # Target, SourceResult, SourceContext
+│   ├── services.py         # Shared SourceContext construction
 │   ├── validation.py       # Target parsing
 │   ├── doh.py              # DNS-over-HTTPS helpers
 │   └── sources/            # One module per data source
@@ -394,11 +496,15 @@ Spyglass-Crimson/
 
 ## Contributing
 
-Contributions are welcome. Please read [ETHICS.md](ETHICS.md) first — contributions that weaken the passive-only boundary or the authorization gate will be declined.
+The repository is **private during the beta**, so external contributions are by
+invitation rather than open pull requests. If you have been given access, read
+[ETHICS.md](ETHICS.md) first — contributions that weaken the passive
+default, widen the active modules beyond their documented bounds, or bypass the
+authorization gate will be declined.
 
 1. Fork the repository and create a branch (`git checkout -b feat/my-change`).
 2. Add or update tests for the behaviour you changed — the suite must stay green and network-free.
-3. Keep the passive boundary intact: no code that sends traffic to a target.
+3. Keep the boundary intact: `http`, `nmap`, and `nuclei` are the only modules allowed to send traffic to a target, and only through the recorded-authorization gate — no unbounded sweeps, fuzzing, or payloads.
 4. Run the quality gate: `pytest`.
 5. Open a pull request describing what changed and why.
 
@@ -410,7 +516,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guidelines.
 
 This tool queries public datasets about infrastructure you may not own. That is only legitimate when you own the target or have explicit authorization to assess it.
 
-**Read [ETHICS.md](ETHICS.md) before you run this against anything that is not yours.** It sets the authorization requirement, the passive-only boundary, data-handling duties, and the consequences of misuse. The short version: run it against your own infrastructure or targets you are explicitly authorized to assess, keep it passive, and respect people's privacy. You are solely responsible for how you use it.
+**Read [ETHICS.md](ETHICS.md) before you run this against anything that is not yours.** It sets the authorization requirement, the passive-by-default rule, the bounds on each active module, data-handling duties, and the consequences of misuse. The short version: run it against your own infrastructure or targets you are explicitly authorized to assess, stay passive unless you have recorded authorization, and respect people's privacy. You are solely responsible for how you use it.
 
 ---
 

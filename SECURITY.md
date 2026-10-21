@@ -4,11 +4,11 @@
 
 | Version | Supported |
 |---|---|
-| `0.2.x` (current) | ✅ |
-| `< 0.2` | ❌ |
+| `1.0.x` (current) | ✅ |
+| `< 1.0` | ❌ |
 
-This project is pre-1.0. Security fixes land on the latest release line; there is
-no long-term support branch yet.
+The project is in private beta. Security fixes land on the latest release line;
+there is no long-term support branch yet.
 
 ## Reporting a Vulnerability
 
@@ -53,22 +53,32 @@ If you find a path that returns a key value, that is a high-severity bug.
 
 ### 2. The server is loopback-only
 
-The application binds `127.0.0.1`. It is not designed to be exposed to a
-network. Running it behind a reverse proxy that makes it publicly reachable is
-out of scope and voids the guarantees above — in particular, there is no
-authentication on the API.
+The application binds `127.0.0.1` and rejects requests whose `Host` header is not
+a loopback name (`SPYGLASS_ALLOWED_HOSTS`, default `127.0.0.1,localhost,::1`),
+which closes the DNS-rebinding path into the API. It is not designed to be
+exposed to a network. Running it behind a reverse proxy that makes it publicly
+reachable is out of scope and voids the guarantees above — in particular, there
+is no authentication on the API.
 
-### 3. Passive only
+### 3. Passive by default
 
-The tool queries third-party public datasets. It does not send traffic to the
-target under test. Any change that would send packets to a target belongs in a
-separate, explicitly authorized project — see [ETHICS.md](ETHICS.md).
+The tool queries third-party public datasets. The exceptions are the active modules
+described in the next section, which are opt-in, bounded, and gated. Any change that
+sends more traffic to a target than those documented bounds belongs in a separate,
+explicitly authorized project — see [ETHICS.md](ETHICS.md).
 
 ### 4. Aggressive mode is gated
 
-Active modes require a recorded, unexpired authorization entry for that exact
-target, checked server-side. The UI toggle is a convenience, not the
-enforcement. Bypassing the check is a vulnerability.
+`http`, `nmap`, and `nuclei` each require a recorded, unexpired authorization for that
+exact target. The check runs server-side when the plan is built, again at execution, and
+again inside the module. Each module refuses any address that is not globally routable
+(loopback, RFC 1918, CGNAT, link-local, reserved) and accepts one host only — CIDR and
+ASN targets never receive active traffic. The HTTP probe follows no redirects and reads at
+most 64 KiB; nmap is capped at the top 100 ports, no OS detection/NSE/UDP, 30 seconds;
+nuclei is rate-limited to 20 requests per second with intrusive template tags excluded,
+out-of-band interaction disabled, and a 50-finding cap. The UI toggle is a convenience,
+not the enforcement. Bypassing the check, widening a module beyond these bounds, or
+allowing an active module to accept a range is a vulnerability.
 
 ## Out of Scope
 

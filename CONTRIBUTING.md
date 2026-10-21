@@ -1,10 +1,14 @@
 # Contributing to Spyglass-Crimson
 
-Thanks for your interest. This project is a **passive** OSINT tool, and the
-contribution guidelines exist mostly to protect that property.
+Thanks for your interest. This project is **passive by default**, with three
+bounded and gated active modules, and the contribution guidelines exist mostly to
+protect that property.
 
-**Read [ETHICS.md](ETHICS.md) before you start.** If your change would send
-traffic to a target, weaken the authorization gate, or help identify private
+The repository is **private during the beta**, so contribution is by invitation.
+The workflow below still applies to anyone with access.
+
+**Read [ETHICS.md](ETHICS.md) before you start.** If your change would widen the
+active surface, weaken the authorization gate, or help identify private
 individuals, it will be declined — no matter how well written it is.
 
 ---
@@ -155,10 +159,10 @@ If the bug involves a credential, follow [SECURITY.md](SECURITY.md) instead.
 
 Be decent to each other. Assume good faith, critique the code and not the
 person, and accept that maintainers may decline a change that conflicts with
-the project's passive-only and privacy guarantees. Behaviour that harasses
-others is not tolerated in issues or pull requests.
+the project's passive-by-default, bounded-active-module, and privacy guarantees. Behaviour
+that harasses others is not tolerated in issues or pull requests.
 
 ---
 
-**By contributing, you affirm that your work is lawful and that it will not
-send traffic to a target.**
+**By contributing, you affirm that your work is lawful and that it will not widen the
+active surface or bypass the authorization gate.**
