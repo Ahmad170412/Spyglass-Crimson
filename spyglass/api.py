@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from flask import Blueprint, current_app, jsonify, request
 
 from .cache import cache_stats
@@ -16,7 +18,12 @@ from .db import (
     source_health,
     utcnow,
 )
-from .orchestrator import create_run, gate_allows_aggressive, start_run_in_background
+from .orchestrator import (
+    AGGRESSIVE_SOURCES,
+    create_run,
+    gate_allows_aggressive,
+    start_run_in_background,
+)
 from .sources.registry import META_BY_ID, all_meta, get_source
 from .validation import ValidationError, parse_target, parse_website
 
@@ -25,6 +32,17 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 
 def _settings() -> Settings:
     return current_app.extensions["spyglass_settings"]
+
+
+def _availability(meta) -> dict[str, object]:
+    """Whether an external scanner this source needs is on PATH."""
+    if not meta.requires_binary:
+        return {"available": True, "missing": None}
+    found = shutil.which(meta.requires_binary) is not None
+    return {
+        "available": found,
+        "missing": None if found else meta.requires_binary,
+    }
 
 
 @bp.after_request
@@ -55,6 +73,7 @@ def sources():
     items = []
     for meta in all_meta():
         item = meta.public()
+        item.update(_availability(meta))
         item["health"] = health_by_source.get(
             meta.id,
             {
@@ -67,6 +86,7 @@ def sources():
         items.append(item)
     core = [item for item in items if item["layer"] == "core"]
     enrichment = [item for item in items if item["layer"] == "enrichment"]
+    aggressive = [item for item in items if item["layer"] == "aggressive"]
     return jsonify(
         {
             "sources": items,
@@ -77,8 +97,15 @@ def sources():
                 "enrichment_implemented": sum(
                     1 for item in enrichment if item["implemented"]
                 ),
+                "aggressive": len(aggressive),
+                "aggressive_implemented": sum(
+                    1 for item in aggressive if item["implemented"]
+                ),
+                "aggressive_available": sum(
+                    1 for item in aggressive if item["available"]
+                ),
                 "keyless": sum(
-                    1 for item in items if item["implemented"] and not item["requires_key"]
+                    1 for item in core if item["implemented"] and not item["requires_key"]
                 ),
             },
         }
@@ -95,6 +122,7 @@ def source_detail(source_id: str):
         {"status": "unknown", "checked_at": None, "latency_ms": None, "error": None},
     )
     payload = meta.public()
+    payload.update(_availability(meta))
     payload["health"] = health
     return jsonify(payload)
 
@@ -109,8 +137,44 @@ def create_run_endpoint():
     target_value = str(body.get("target") or "").strip()
     mode = str(body.get("mode") or "passive").strip().lower()
     layer = body.get("layer")
+    aggressive = body.get("aggressive", False)
+    if not isinstance(aggressive, bool):
+        return jsonify({"error": "aggressive must be a boolean"}), 400
+    sources = body.get("sources")
+    active_sources = body.get("active_sources")
+
     if layer not in (None, "core", "enrichment"):
         return jsonify({"error": "layer must be core, enrichment, or omitted"}), 400
+
+    if active_sources is not None:
+        if not isinstance(active_sources, list) or not all(
+            isinstance(item, str) for item in active_sources
+        ):
+            return jsonify({"error": "active_sources must be a list of module ids"}), 400
+        if not active_sources:
+            return jsonify({"error": "active_sources must not be empty"}), 400
+        if not aggressive:
+            return jsonify(
+                {"error": "active_sources requires aggressive=true"}
+            ), 400
+        unknown_active = sorted(
+            item for item in set(active_sources) if item not in AGGRESSIVE_SOURCES
+        )
+        if unknown_active:
+            return jsonify(
+                {"error": f"unknown active module: {', '.join(unknown_active)}"}
+            ), 400
+
+    if sources is not None:
+        if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
+            return jsonify({"error": "sources must be a list of source ids"}), 400
+        unknown = sorted(
+            source
+            for source in set(sources)
+            if source not in META_BY_ID or META_BY_ID[source].layer == "aggressive"
+        )
+        if unknown:
+            return jsonify({"error": f"unknown or unsupported source: {', '.join(unknown)}"}), 400
 
     if not target_value:
         return jsonify({"error": "target is required"}), 400
@@ -123,7 +187,33 @@ def create_run_endpoint():
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    handle = start_run_in_background(settings, target.value, mode=mode, layer=layer)
+    if aggressive and not gate_allows_aggressive(settings, target.value):
+        return (
+            jsonify(
+                {
+                    "error": "aggressive mode requires a recorded authorization for this target",
+                    "target": target.value,
+                }
+            ),
+            403,
+        )
+
+    try:
+        handle = start_run_in_background(
+            settings,
+            target.value,
+            mode=mode,
+            layer=layer,
+            sources=list(sources) if sources is not None else None,
+            aggressive=aggressive,
+            active_sources=(
+                list(active_sources) if active_sources is not None else None
+            ),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "target": target.value}), 403
     return jsonify(handle), 202
 
 
@@ -273,10 +363,41 @@ def create_authorization():
     target_value = str(body.get("target") or "").strip()
     if not target_value:
         return jsonify({"error": "target is required"}), 400
+
+    # Normalise the same way a run does, so the gate compares like with like
+    # (https://example.com/path and example.com must be the same authorization).
+    try:
+        target_value = parse_target(target_value).value
+    except ValidationError:
+        try:
+            target_value = parse_website(target_value).value
+        except ValidationError:
+            pass
     from .orchestrator import record_authorization
 
-    created = record_authorization(settings, target_value, note=body.get("note"))
-    return jsonify({"target": target_value, "created_at": created, "scope": "aggressive"}), 201
+    ttl_days = body.get("ttl_days")
+    if ttl_days is not None:
+        try:
+            ttl_days = int(ttl_days)
+        except (TypeError, ValueError):
+            return jsonify({"error": "ttl_days must be an integer"}), 400
+        if ttl_days <= 0:
+            return jsonify({"error": "ttl_days must be positive"}), 400
+
+    created = record_authorization(
+        settings, target_value, note=body.get("note"), ttl_days=ttl_days
+    )
+    return (
+        jsonify(
+            {
+                "target": target_value,
+                "created_at": created["created_at"],
+                "expires_at": created["expires_at"],
+                "scope": "aggressive",
+            }
+        ),
+        201,
+    )
 
 
 @bp.get("/authorizations")

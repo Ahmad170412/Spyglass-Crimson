@@ -8,13 +8,18 @@ from .asn import AsnSource
 from .censys import CensysSource
 from .ct import CertificateTransparencySource
 from .dns import DnsSource
+from .http_probe import HttpProbeSource
 from .internetdb import InternetDbSource
 from .ipinfo import IpinfoSource
+from .nmap import NmapSource
+from .nuclei import NucleiSource
 from .otx import OtxSource
 from .ptr import PtrSource
 from .rdap import RdapSource
 from .shodan import ShodanSource
+from .spamhaus import SpamhausDropSource
 from .subdomains import SubdomainsSource
+from .tor import TorExitSource
 from .urlscan import UrlscanSource
 from .wayback import WaybackSource
 
@@ -31,6 +36,7 @@ class SourceMeta:
     derived_from: tuple[str, ...] = ()
     docs_url: str = ""
     key_env: str | None = None
+    requires_binary: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -43,6 +49,7 @@ class SourceMeta:
             "implemented": self.implemented,
             "derived_from": list(self.derived_from),
             "docs_url": self.docs_url,
+            "requires_binary": self.requires_binary,
         }
 
 
@@ -55,11 +62,16 @@ ADAPTERS: dict[str, type[Source]] = {
     "ptr": PtrSource,
     "internetdb": InternetDbSource,
     "wayback": WaybackSource,
+    "tor": TorExitSource,
+    "spamhaus": SpamhausDropSource,
     "shodan": ShodanSource,
     "censys": CensysSource,
     "ipinfo": IpinfoSource,
     "otx": OtxSource,
     "urlscan": UrlscanSource,
+    "http": HttpProbeSource,
+    "nmap": NmapSource,
+    "nuclei": NucleiSource,
 }
 
 META: tuple[SourceMeta, ...] = (
@@ -129,6 +141,22 @@ META: tuple[SourceMeta, ...] = (
         docs_url="https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server",
     ),
     SourceMeta(
+        id="tor",
+        label="Tor exits",
+        layer="core",
+        description="Whether an IPv4 address is a current Tor exit node",
+        accepts=("ip",),
+        docs_url="https://www.torproject.org/",
+    ),
+    SourceMeta(
+        id="spamhaus",
+        label="Spamhaus DROP",
+        layer="core",
+        description="Hijacked and bulletproof-hosting netblocks from Spamhaus DROP",
+        accepts=("ip",),
+        docs_url="https://www.spamhaus.org/blocklists/do-not-route-or-peer/",
+    ),
+    SourceMeta(
         id="shodan",
         label="Shodan API",
         layer="enrichment",
@@ -183,6 +211,34 @@ META: tuple[SourceMeta, ...] = (
         docs_url="https://urlscan.io/docs/api/",
         key_env="SPYGLASS_URLSCAN_KEY",
     ),
+    SourceMeta(
+        id="http",
+        label="HTTP probe",
+        layer="aggressive",
+        description="One authorized HTTPS request: status, headers, title, and redirect",
+        accepts=("domain", "ip"),
+        implemented=True,
+    ),
+    SourceMeta(
+        id="nmap",
+        label="Port scan",
+        layer="aggressive",
+        description="TCP connect scan of the top 100 ports on one authorized host",
+        accepts=("domain", "ip"),
+        implemented=True,
+        docs_url="https://nmap.org/book/man.html",
+        requires_binary="nmap",
+    ),
+    SourceMeta(
+        id="nuclei",
+        label="Template checks",
+        layer="aggressive",
+        description="Rate-limited, non-intrusive template checks on one authorized host",
+        accepts=("domain", "ip"),
+        implemented=True,
+        docs_url="https://docs.projectdiscovery.io/tools/nuclei/overview",
+        requires_binary="nuclei",
+    ),
 )
 
 META_BY_ID = {item.id: item for item in META}
@@ -203,13 +259,21 @@ def source_meta(source_id: str) -> SourceMeta:
         raise KeyError(f"Unknown source: {source_id}") from exc
 
 
-def sources_for(kind: str, *, layer: str | None = None) -> list[SourceMeta]:
+def sources_for(
+    kind: str, *, layer: str | None = None, include_aggressive: bool = False
+) -> list[SourceMeta]:
+    """Sources that accept this target kind.
+
+    Aggressive adapters are excluded unless the caller has already checked the
+    authorization gate — planning one by accident must not send traffic.
+    """
     return [
         item
         for item in META
         if kind in item.accepts
         and item.implemented
         and (layer is None or item.layer == layer)
+        and (include_aggressive or item.layer != "aggressive")
     ]
 
 

@@ -54,6 +54,15 @@ def _mock_keyless_ip(respx, address: str = "1.1.1.1") -> None:
             200, json={"ip": address, "ports": [53, 443], "hostnames": ["one.one.one.one"], "tags": [], "cpes": [], "vulns": []}
         )
     )
+    respx.get("https://check.torproject.org/torbulkexitlist").mock(
+        return_value=httpx.Response(200, text="203.0.113.9\n")
+    )
+    respx.get("https://www.spamhaus.org/drop/drop_v4.json").mock(
+        return_value=httpx.Response(200, text='{"cidr":"203.0.113.0/24","sblid":"SBL-TEST","rir":"arin"}\n')
+    )
+    respx.get("https://www.spamhaus.org/drop/drop_v6.json").mock(
+        return_value=httpx.Response(200, text="")
+    )
 
 
 def test_build_plan_orders_derived_last():

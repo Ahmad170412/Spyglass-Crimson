@@ -16,6 +16,7 @@ from .db import (
     insert_observation,
     insert_source_run,
     get_run,
+    record_source_health,
     update_run_status,
 )
 from .http import HttpClient
@@ -26,6 +27,20 @@ from .validation import expand_network
 # Core sources that depend on an earlier source's output. The orchestrator
 # runs independent sources first, then fills in dependants with derived data.
 DERIVED_SOURCES = {"subdomains"}
+
+# Sources that send traffic to the target. Planned only after the gate opens,
+# and re-checked at execution time. Derived from the registry so a new active
+# module cannot be forgotten here.
+AGGRESSIVE_SOURCES = {
+    meta.id for meta in META_BY_ID.values() if meta.layer == "aggressive"
+}
+
+# Sources that operate on one address at a time when the target is a range.
+PER_IP_SOURCES = {"asn", "internetdb", "ptr", "tor", "spamhaus"}
+
+# Sources that are always worth including once a key exists, even when the
+# caller narrows the plan with an explicit source list.
+ALWAYS_PLANNED_LAYERS = {"enrichment"}
 
 ENRICHMENT_PROVIDERS = {
     "shodan": "shodan",
@@ -61,7 +76,8 @@ def gate_allows_aggressive(settings: Settings, target_value: str) -> bool:
             """
             SELECT COUNT(*) AS n FROM authorizations
             WHERE target = ?
-              AND (expires_at IS NULL OR expires_at > ?)
+              AND expires_at IS NOT NULL
+              AND expires_at > ?
             """,
             (target_value, now),
         ).fetchone()
@@ -69,19 +85,37 @@ def gate_allows_aggressive(settings: Settings, target_value: str) -> bool:
 
 
 def record_authorization(
-    settings: Settings, target_value: str, scope: str = "aggressive", note: str | None = None
-) -> str:
+    settings: Settings,
+    target_value: str,
+    scope: str = "aggressive",
+    note: str | None = None,
+    ttl_days: int | None = None,
+) -> dict[str, Any]:
+    """Record an authorization that expires.
+
+    A record without an expiry would authorize the target forever, so every
+    record gets one: ``ttl_days`` if given, otherwise the configured default.
+    """
+    from datetime import timedelta
+
     from .db import connect as _connect, init_db, utcnow as _now
 
+    days = settings.authorization_ttl_days if ttl_days is None else ttl_days
+    if days <= 0:
+        raise ValueError("Authorization ttl_days must be positive")
     init_db(settings.db_path)
-    created = _now()
+    created_at = datetime.now(timezone.utc)
+    expires_at = (created_at + timedelta(days=days)).isoformat(timespec="seconds")
     with _connect(settings.db_path) as conn:
         conn.execute(
-            "INSERT INTO authorizations (target, scope, note, created_at) VALUES (?, ?, ?, ?)",
-            (target_value, scope, note, created),
+            """
+            INSERT INTO authorizations (target, scope, note, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (target_value, scope, note, _now(), expires_at),
         )
         conn.commit()
-    return created
+    return {"created_at": _now(), "expires_at": expires_at}
 
 
 # A CIDR and an ASN are conceptually IP targets: they run the IP source list,
@@ -89,13 +123,56 @@ def record_authorization(
 PLAN_KIND = {"cidr": "ip", "asn": "ip"}
 
 
-def build_plan(kind: str, layer: str | None, mode: str) -> list[str]:
-    metas = sources_for(PLAN_KIND.get(kind, kind), layer=layer)
+def build_plan(
+    kind: str,
+    layer: str | None,
+    mode: str,
+    sources: list[str] | None = None,
+    *,
+    include_aggressive: bool = False,
+    active_sources: list[str] | None = None,
+) -> list[str]:
+    """Return the ordered source ids for a run.
+
+    ``sources`` narrows the core sources to the ones the caller selected.
+    Enrichment providers stay in the plan (they record their own skip reason
+    when no key is configured), and derived sources always run last.
+    ``active_sources`` optionally narrows the gated modules; omitting it plans
+    every active module for an aggressive run.
+    """
+    metas = sources_for(
+        PLAN_KIND.get(kind, kind),
+        layer=layer,
+        include_aggressive=include_aggressive,
+    )
+    # Active modules act on exactly one host. Ranges and ASNs are sampled and
+    # enriched passively only, even if the caller asked for aggressive mode.
+    if kind in {"cidr", "asn"}:
+        metas = [meta for meta in metas if meta.layer != "aggressive"]
+    if sources is not None:
+        requested = set(sources)
+        metas = [
+            meta
+            for meta in metas
+            if meta.id in requested
+            or meta.layer in ALWAYS_PLANNED_LAYERS
+            or meta.id in DERIVED_SOURCES
+            # `sources` narrows the passive plan; an aggressive opt-in still adds
+            # its module, and the gate has already been checked by the caller.
+            or meta.layer == "aggressive"
+        ]
     plan = []
     for meta in metas:
         if meta.id in DERIVED_SOURCES:
             continue
         plan.append(meta.id)
+    if active_sources is not None:
+        requested_active = set(active_sources)
+        plan = [
+            source_id
+            for source_id in plan
+            if source_id not in AGGRESSIVE_SOURCES or source_id in requested_active
+        ]
     # Run dependants (subdomains) after everything else.
     for meta in metas:
         if meta.id in DERIVED_SOURCES:
@@ -132,7 +209,7 @@ def run_sources(
         http=HttpClient(
             timeout=settings.source_timeout,
             user_agent=settings.user_agent,
-            retries=0,
+            retries=settings.http_retries,
         ),
     )
     creds = CredentialStore(
@@ -155,6 +232,14 @@ def run_sources(
             if meta is None:
                 continue
 
+            if meta.layer == "aggressive" and not gate_allows_aggressive(
+                settings, target.value
+            ):
+                reason = "authorization required for aggressive sources"
+                _record_skipped(settings, run_id, source_id, reason)
+                results.append({"source": source_id, "status": "skipped", "error": reason})
+                continue
+
             if meta.requires_key and not configured.get(ENRICHMENT_PROVIDERS.get(source_id, source_id)):
                 reason = "no API key configured"
                 _record_skipped(settings, run_id, source_id, reason)
@@ -167,7 +252,7 @@ def run_sources(
                 continue
 
             effective_target = target
-            if target.kind == "cidr" and source_id in {"asn", "internetdb", "ptr"}:
+            if target.kind == "cidr" and source_id in PER_IP_SOURCES:
                 ips, note = _select_ips(target, settings)
                 if not ips:
                     _record_skipped(settings, run_id, source_id, "no addresses to sample")
@@ -205,39 +290,71 @@ def _run_single(
     ctx: SourceContext,
     budget_seconds: float,
     budget_start: float,
+    *,
+    persist: bool = True,
 ) -> dict[str, Any] | None:
+    """Run one source under the remaining budget.
+
+    The budget is checked *before* the work starts. On timeout the worker is
+    abandoned rather than joined: waiting for it would block the run and let a
+    hung upstream defeat the budget entirely. The abandoned thread is bounded
+    by its own HTTP timeout.
+    """
+    remaining = budget_seconds - (time.monotonic() - budget_start)
+    if remaining <= 0:
+        reason = "run budget exhausted"
+        if persist:
+            insert_source_run(settings.db_path, run_id, source_id, "skipped", error=reason)
+        return {"source": source_id, "status": "skipped", "error": reason}
+
     source = get_source(source_id)
-    remaining = max(1.0, budget_seconds - (time.monotonic() - budget_start))
     started = time.monotonic()
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(source.run, target, ctx)
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(source.run, target, ctx)
-            result = future.result(timeout=remaining)
+        result = future.result(timeout=remaining)
     except FutureTimeout:
+        future.cancel()
         duration_ms = int((time.monotonic() - started) * 1000)
-        error = f"{source_id} timed out after {remaining:.0f}s"
-        insert_source_run(settings.db_path, run_id, source_id, "error", error=error, duration_ms=duration_ms)
+        error = f"{source_id} timed out after {remaining:.1f}s"
+        if persist:
+            insert_source_run(settings.db_path, run_id, source_id, "error", error=error, duration_ms=duration_ms)
+            record_source_health(settings.db_path, source_id, "error", latency_ms=duration_ms, error=error)
         return {"source": source_id, "status": "error", "error": error, "duration_ms": duration_ms}
     except SourceError as exc:
         duration_ms = int((time.monotonic() - started) * 1000)
-        insert_source_run(settings.db_path, run_id, source_id, "error", error=str(exc), duration_ms=duration_ms)
+        if persist:
+            insert_source_run(settings.db_path, run_id, source_id, "error", error=str(exc), duration_ms=duration_ms)
+            record_source_health(settings.db_path, source_id, "error", latency_ms=duration_ms, error=str(exc))
         return {"source": source_id, "status": "error", "error": str(exc), "duration_ms": duration_ms}
     except Exception as exc:  # noqa: BLE001 - a single source must never kill the run
         duration_ms = int((time.monotonic() - started) * 1000)
         error = f"{source_id} failed: {exc}"
-        insert_source_run(settings.db_path, run_id, source_id, "error", error=error, duration_ms=duration_ms)
+        if persist:
+            insert_source_run(settings.db_path, run_id, source_id, "error", error=error, duration_ms=duration_ms)
+            record_source_health(settings.db_path, source_id, "error", latency_ms=duration_ms, error=error)
         return {"source": source_id, "status": "error", "error": error, "duration_ms": duration_ms}
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    insert_source_run(
-        settings.db_path,
-        run_id,
-        source_id,
-        result.status,
-        record_count=result.record_count,
-        data=result.data,
-        duration_ms=duration_ms,
-    )
+    if persist:
+        insert_source_run(
+            settings.db_path,
+            run_id,
+            source_id,
+            result.status,
+            record_count=result.record_count,
+            data=result.data,
+            duration_ms=duration_ms,
+        )
+        record_source_health(
+            settings.db_path,
+            source_id,
+            "ok" if result.status in {"ok", "empty", "not_found", "partial"} else "error",
+            latency_ms=duration_ms,
+            error=None if result.status in {"ok", "empty", "not_found", "partial"} else result.status,
+        )
     return {
         "source": source_id,
         "status": result.status,
@@ -260,18 +377,24 @@ def _run_per_ip(
     ctx = SourceContext(
         settings=settings,
         cache=Cache(settings.db_path),
-        http=HttpClient(timeout=settings.source_timeout, user_agent=settings.user_agent, retries=0),
+        http=HttpClient(
+            timeout=settings.source_timeout,
+            user_agent=settings.user_agent,
+            retries=settings.http_retries,
+        ),
     )
     ok = 0
     errors = 0
     collected: list[dict[str, Any]] = []
+    error_messages: list[str] = []
     try:
         for address in ips:
             if time.monotonic() - budget_start >= budget_seconds:
                 break
             ip_target = Target(kind="ip", value=address, raw=address, ip=_ip(address))
             record = _run_single(
-                settings, run_id, source_id, ip_target, ctx, budget_seconds, budget_start
+                settings, run_id, source_id, ip_target, ctx,
+                budget_seconds, budget_start, persist=False,
             )
             if record is None:
                 continue
@@ -281,18 +404,38 @@ def _run_per_ip(
                     collected.append(record["data"])
             else:
                 errors += 1
+                if record.get("error"):
+                    error_messages.append(str(record["error"]))
     finally:
         ctx.http.close()
 
+    status = "ok" if ok else ("error" if errors else "empty")
     summary = {
         "source": source_id,
-        "status": "ok" if ok else ("error" if errors else "empty"),
+        "status": status,
         "record_count": ok,
         "ip_count": len(ips),
         "errors": errors,
         "note": note,
         "results": collected,
     }
+    # One row per source, not one per sampled address: the plan's source count
+    # should reflect the plan, not the size of the range.
+    insert_source_run(
+        settings.db_path,
+        run_id,
+        source_id,
+        status,
+        record_count=ok,
+        error="; ".join(error_messages) if error_messages and not ok else None,
+        data={"note": note, "sampled": len(ips), "results": collected},
+    )
+    record_source_health(
+        settings.db_path,
+        source_id,
+        "ok" if ok else "error",
+        error=None if ok else ("; ".join(error_messages) or "no addresses answered"),
+    )
     results.append(summary)
 
 
@@ -359,7 +502,22 @@ def extract_entities(
     if target.kind == "ip" and target.ip:
         ips.add(str(target.ip))
 
+    flattened: list[dict[str, Any]] = []
     for record in results:
+        # Per-IP sources aggregate one row per source and keep each address's
+        # payload under "results"; expand them so every sampled address still
+        # contributes entities and observations.
+        payloads = record.get("results")
+        if isinstance(payloads, list) and payloads:
+            flattened.extend(
+                {"source": record.get("source"), "data": payload}
+                for payload in payloads
+                if isinstance(payload, dict)
+            )
+        else:
+            flattened.append(record)
+
+    for record in flattened:
         source_id = record.get("source")
         data = record.get("data")
         if not isinstance(data, dict):
@@ -438,6 +596,115 @@ def extract_entities(
             for archived_host in data.get("hosts") or []:
                 hosts.add(str(archived_host).lower().rstrip("."))
 
+        elif source_id == "tor":
+            if data.get("is_tor_exit"):
+                insert_observation(
+                    settings.db_path, run_id, source=source_id, category="anonymity",
+                    severity="info",
+                    title=f"{data.get('ip') or target.value} is a Tor exit node",
+                    detail="Address appears on the Tor Project's bulk exit list.",
+                    data={"dataset": data.get("dataset"), "list_size": data.get("list_size")},
+                )
+
+        elif source_id == "spamhaus":
+            matches = data.get("matches") or []
+            if matches:
+                netblocks = ", ".join(str(item.get("cidr")) for item in matches[:10])
+                sbl = ", ".join(
+                    str(item.get("sblid")) for item in matches if item.get("sblid")
+                )
+                insert_observation(
+                    settings.db_path, run_id, source=source_id, category="reputation",
+                    severity="high",
+                    title=f"{data.get('ip') or target.value} is listed in Spamhaus DROP",
+                    detail=netblocks + (f" ({sbl})" if sbl else ""),
+                    data={"matches": matches},
+                )
+
+        elif source_id == "http":
+            host = str(data.get("host") or target.value)
+            insert_entity(
+                settings.db_path, run_id, "enrichment", f"http:{host}",
+                {k: v for k, v in data.items() if k != "status"}, source_id,
+            )
+            title = data.get("title") or host
+            insert_observation(
+                settings.db_path, run_id, source=source_id, category="surface",
+                severity="info",
+                title=f"HTTP {data.get('status_code')} on {host}",
+                detail=f"{title} · {data.get('server') or 'no Server header'}"
+                + (f" · {len(data.get('missing_security_headers') or [])} security headers missing"
+                   if data.get("missing_security_headers") else ""),
+                data={
+                    "redirect": data.get("redirect"),
+                    "missing_security_headers": data.get("missing_security_headers"),
+                },
+            )
+
+        elif source_id == "nmap":
+            address = str(data.get("ip") or target.value)
+            ports = data.get("open_ports") or []
+            insert_entity(
+                settings.db_path, run_id, "host", address,
+                {
+                    "ip": address,
+                    "host": data.get("host"),
+                    "host_up": data.get("host_up"),
+                    "open_ports": ports,
+                    "ports_scanned": data.get("ports_scanned"),
+                },
+                source_id,
+            )
+            if ports:
+                listing = ", ".join(
+                    f"{port.get('port')}/{port.get('protocol') or 'tcp'}"
+                    f" ({port.get('service') or 'unknown'})"
+                    for port in ports[:20]
+                    if isinstance(port, dict)
+                )
+                insert_observation(
+                    settings.db_path, run_id, source=source_id, category="exposure",
+                    severity="medium",
+                    title=f"{len(ports)} open TCP port(s) on {address}",
+                    detail=listing,
+                    data={"ports": ports, "ports_scanned": data.get("ports_scanned")},
+                )
+
+        elif source_id == "nuclei":
+            host = str(data.get("host") or target.value)
+            findings = [
+                finding for finding in (data.get("findings") or [])
+                if isinstance(finding, dict)
+            ]
+            insert_entity(
+                settings.db_path, run_id, "enrichment", f"nuclei:{host}",
+                {
+                    "host": host,
+                    "url": data.get("url"),
+                    "finding_count": len(findings),
+                    "truncated": data.get("truncated"),
+                },
+                source_id,
+            )
+            for finding in findings:
+                label = (
+                    finding.get("name")
+                    or finding.get("template")
+                    or "Template match"
+                )
+                insert_observation(
+                    settings.db_path, run_id, source=source_id, category="vulnerability",
+                    severity=str(finding.get("severity") or "info"),
+                    title=f"{label} on {host}",
+                    detail=" · ".join(
+                        part for part in (
+                            str(finding.get("template") or ""),
+                            str(finding.get("matched_at") or ""),
+                        ) if part
+                    ),
+                    data=finding,
+                )
+
     for hostname in sorted(hosts):
         insert_entity(settings.db_path, run_id, "hostname", hostname, {"hostname": hostname}, None)
     for address in sorted(ips):
@@ -460,21 +727,69 @@ def create_run(
     mode: str = "passive",
     layer: str | None = None,
     target: Target | None = None,
+    sources: list[str] | None = None,
+    aggressive: bool = False,
+    active_sources: list[str] | None = None,
 ) -> dict[str, Any]:
-    from .validation import parse_target, parse_website
+    from .validation import ValidationError, parse_target, parse_website
 
     if target is None:
         target = parse_website(target_value) if mode == "website" else parse_target(target_value)
+
+    if (
+        target.kind == "cidr"
+        and target.network is not None
+        and target.network.num_addresses > settings.max_cidr_hosts
+    ):
+        raise ValidationError(
+            f"CIDR is larger than the {settings.max_cidr_hosts}-address limit"
+        )
+
+    if aggressive and target.kind in {"cidr", "asn"}:
+        raise ValidationError(
+            "active modules require a single host; CIDR and ASN targets are passive only"
+        )
 
     from .db import init_db
 
     init_db(settings.db_path)  # idempotent; keeps first-run and test paths safe
     run_id = new_run_id()
-    plan = build_plan(target.kind, layer, mode)
+
+    # Never plan an aggressive source unless the gate is open right now. A
+    # direct caller asking for one without an authorization gets an error
+    # rather than a silently downgraded passive run.
+    if aggressive and not gate_allows_aggressive(settings, target.value):
+        raise PermissionError(
+            "aggressive mode requires a recorded authorization for this target"
+        )
+    if active_sources is not None:
+        unknown = sorted(set(active_sources) - AGGRESSIVE_SOURCES)
+        if unknown:
+            raise ValidationError(
+                f"not an active module: {', '.join(unknown)}"
+            )
+        if not active_sources:
+            raise ValidationError("active_sources must not be empty")
+        if not aggressive:
+            raise ValidationError("active_sources requires aggressive=true")
+    include_aggressive = bool(aggressive)
+    plan = build_plan(
+        target.kind,
+        layer,
+        mode,
+        sources,
+        include_aggressive=include_aggressive,
+        active_sources=active_sources,
+    )
     meta = {
         "plan": plan,
         "layer": layer,
         "requested_mode": mode,
+        "requested_sources": list(sources) if sources is not None else None,
+        "requested_active_sources": (
+            list(active_sources) if active_sources is not None else None
+        ),
+        "aggressive": include_aggressive,
         "budget_seconds": settings.run_budget_seconds,
     }
     insert_row = connect(settings.db_path)
@@ -484,7 +799,15 @@ def create_run(
             INSERT INTO runs (id, target, target_kind, mode, status, created_at, meta_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, target.value, target.kind, "passive", "queued", utcnow(), _dumps(meta)),
+            (
+                run_id,
+                target.value,
+                target.kind,
+                "aggressive" if include_aggressive else "passive",
+                "queued",
+                utcnow(),
+                _dumps(meta),
+            ),
         )
         insert_row.commit()
     finally:
@@ -507,6 +830,18 @@ def execute_run(settings: Settings, run_id: str) -> dict[str, Any]:
 
     meta = run.get("meta") or {}
     plan = meta.get("plan") or []
+    blocked = [
+        source_id
+        for source_id in plan
+        if source_id in AGGRESSIVE_SOURCES
+        and not gate_allows_aggressive(settings, run["target"])
+    ]
+    for source_id in blocked:
+        _record_skipped(
+            settings, run_id, source_id, "authorization required for aggressive sources"
+        )
+    if blocked:
+        plan = [source_id for source_id in plan if source_id not in blocked]
     raw_budget = meta.get("budget_seconds")
     budget = (
         float(raw_budget)
@@ -541,11 +876,22 @@ def start_run_in_background(
     target_value: str,
     mode: str = "passive",
     layer: str | None = None,
+    sources: list[str] | None = None,
+    aggressive: bool = False,
+    active_sources: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a run and execute it on a worker thread. Returns the run handle."""
     import threading
 
-    created = create_run(settings, target_value, mode=mode, layer=layer)
+    created = create_run(
+        settings,
+        target_value,
+        mode=mode,
+        layer=layer,
+        sources=sources,
+        aggressive=aggressive,
+        active_sources=active_sources,
+    )
     run_id = created["id"]
 
     def _worker() -> None:

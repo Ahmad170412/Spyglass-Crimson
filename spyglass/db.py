@@ -123,6 +123,11 @@ def init_db(db_path: str | Path) -> None:
             ("schema_version", str(SCHEMA_VERSION)),
         )
         conn.commit()
+    # Run history is investigation data. Keep it owner-only on POSIX hosts.
+    try:
+        Path(db_path).chmod(0o600)
+    except OSError:
+        pass
 
 
 def db_ok(db_path: str | Path) -> bool:
@@ -323,7 +328,7 @@ def insert_entity(
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(run_id, kind, key) DO UPDATE SET
                 data_json = excluded.data_json,
-                source = excluded.source
+                source = COALESCE(excluded.source, entities.source)
             """,
             (run_id, kind, key, json.dumps(data, default=str), source),
         )

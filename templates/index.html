@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=8">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to dashboard</a>
@@ -107,29 +107,36 @@
 
           <section class="block" aria-labelledby="scannersTitle">
             <div class="block-head">
-              <h2 id="scannersTitle">Local scanners</h2>
-              <span class="block-meta">Aggressive tools</span>
+              <h2 id="scannersTitle">Active modules</h2>
+              <span class="block-meta">Authorization required</span>
             </div>
 
             <div class="source-list">
               <div class="source-row">
                 <div class="source-main">
-                  <span class="source-name">nmap</span>
-                  <span class="source-detail">Port and service discovery</span>
+                  <span class="source-name">HTTP probe</span>
+                  <span class="source-detail">One HTTPS GET: status, headers, title, redirect.</span>
                 </div>
                 <span class="source-state">
-                  <span class="status status--active"><span class="status-dot"></span>Found</span>
-                  <span class="source-version">7.99</span>
+                  <span class="status status--warn"><span class="status-dot"></span>Gated</span>
                 </span>
               </div>
-
               <div class="source-row">
                 <div class="source-main">
-                  <span class="source-name">nuclei</span>
-                  <span class="source-detail">Web vulnerability templates</span>
+                  <span class="source-name">Port scan</span>
+                  <span class="source-detail">Top 100 TCP ports with nmap. Needs nmap on PATH.</span>
                 </div>
                 <span class="source-state">
-                  <span class="status status--active"><span class="status-dot"></span>Found</span>
+                  <span class="status status--warn"><span class="status-dot"></span>Gated</span>
+                </span>
+              </div>
+              <div class="source-row">
+                <div class="source-main">
+                  <span class="source-name">Template checks</span>
+                  <span class="source-detail">Curated, rate-limited nuclei templates. Needs nuclei on PATH.</span>
+                </div>
+                <span class="source-state">
+                  <span class="status status--warn"><span class="status-dot"></span>Gated</span>
                 </span>
               </div>
             </div>
@@ -140,7 +147,7 @@
         <section class="view" id="view-website" data-view-panel="website" aria-labelledby="websiteTitle" hidden>
           <header class="view-head">
             <h1 id="websiteTitle">Website</h1>
-            <p>Public records for a domain, with optional active probes.</p>
+            <p>Public records for a domain, with an optional active probe.</p>
           </header>
 
           <form class="scan" data-scan="website" novalidate>
@@ -174,7 +181,7 @@
             </div>
 
             <div class="auth-strip" data-auth-strip hidden>
-              <p><strong>Aggressive mode.</strong> Probes are sent from this machine to the target. Only continue on infrastructure you own or have written permission to test.</p>
+              <p><strong>Aggressive mode.</strong> Sends traffic from this machine to the target: one HTTPS request, a bounded TCP port scan, and rate-limited template checks. Only continue on infrastructure you own or have written permission to test.</p>
               <label class="auth-check">
                 <input type="checkbox" data-auth-check>
                 I have authorization
@@ -188,7 +195,7 @@
               </div>
 
               <label class="tool-row">
-                <input type="checkbox" name="website-tool" value="whois" checked>
+                <input type="checkbox" name="website-tool" value="rdap" checked>
                 <span class="tool-main">
                   <span class="tool-name">WHOIS</span>
                   <span class="tool-desc">Registrar, key dates, nameservers</span>
@@ -218,39 +225,57 @@
                 <input type="checkbox" name="website-tool" value="subdomains" checked>
                 <span class="tool-main">
                   <span class="tool-name">Subdomains</span>
-                  <span class="tool-desc">Passive DNS and certificate hosts</span>
+                  <span class="tool-desc">Hostnames derived from CT logs</span>
                 </span>
-                <span class="tool-tag">Passive</span>
+                <span class="tool-tag">Derived</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="website-tool" value="wayback" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Historical URLs</span>
+                  <span class="tool-desc">Archived paths and old hosts</span>
+                </span>
+                <span class="tool-tag">Wayback</span>
               </label>
             </div>
 
             <div class="tool-group">
               <div class="group-head">
                 <h2>Aggressive tools</h2>
-                <span>Sends probes</span>
+                <span>Sends traffic to the target</span>
               </div>
 
-              <label class="tool-row is-locked" data-aggressive>
+              <label class="tool-row is-locked" data-aggressive data-active-source="http">
+                <input type="checkbox" name="website-tool" value="http" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">HTTP probe</span>
+                  <span class="tool-desc">One HTTPS request: status, headers, title, redirect</span>
+                </span>
+                <span class="tool-tag" data-active-tag>1 request</span>
+              </label>
+
+              <label class="tool-row is-locked" data-aggressive data-active-source="nmap">
                 <input type="checkbox" name="website-tool" value="nmap" disabled>
                 <span class="tool-main">
                   <span class="tool-name">Port scan</span>
-                  <span class="tool-desc">Top 1,000 TCP ports</span>
+                  <span class="tool-desc">Top 100 TCP ports, one host, 30s cap</span>
                 </span>
-                <span class="tool-tag">nmap</span>
+                <span class="tool-tag" data-active-tag>nmap</span>
               </label>
 
-              <label class="tool-row is-locked" data-aggressive>
+              <label class="tool-row is-locked" data-aggressive data-active-source="nuclei">
                 <input type="checkbox" name="website-tool" value="nuclei" disabled>
                 <span class="tool-main">
-                  <span class="tool-name">Vulnerability templates</span>
-                  <span class="tool-desc">Web checks from the nuclei library</span>
+                  <span class="tool-name">Template checks</span>
+                  <span class="tool-desc">Curated, rate-limited checks, one host</span>
                 </span>
-                <span class="tool-tag">nuclei</span>
+                <span class="tool-tag" data-active-tag>nuclei</span>
               </label>
             </div>
 
             <div class="scan-foot">
-              <span class="scan-summary" data-scan-summary>4 tools selected</span>
+              <span class="scan-summary" data-scan-summary>5 tools selected</span>
               <button class="btn-primary" type="submit" data-run>Run passive recon</button>
             </div>
 
@@ -296,7 +321,7 @@
             </div>
 
             <div class="auth-strip" data-auth-strip hidden>
-              <p><strong>Aggressive mode.</strong> Probes are sent from this machine to the target. Only continue on infrastructure you own or have written permission to test.</p>
+              <p><strong>Aggressive mode.</strong> Sends traffic from this machine to the target: one HTTPS request, a bounded TCP port scan, and rate-limited template checks. Only continue on infrastructure you own or have written permission to test.</p>
               <label class="auth-check">
                 <input type="checkbox" data-auth-check>
                 I have authorization
@@ -310,7 +335,7 @@
               </div>
 
               <label class="tool-row">
-                <input type="checkbox" name="ip-tool" value="whois" checked>
+                <input type="checkbox" name="ip-tool" value="rdap" checked>
                 <span class="tool-main">
                   <span class="tool-name">WHOIS</span>
                   <span class="tool-desc">Allocation, abuse contacts, netblock</span>
@@ -330,49 +355,76 @@
               <label class="tool-row">
                 <input type="checkbox" name="ip-tool" value="asn" checked>
                 <span class="tool-main">
-                  <span class="tool-name">ASN &amp; Geo</span>
-                  <span class="tool-desc">Origin network, country, city</span>
+                  <span class="tool-name">ASN &amp; routing</span>
+                  <span class="tool-desc">Origin network, prefix, country</span>
                 </span>
                 <span class="tool-tag">RIPE</span>
               </label>
 
-              <label class="tool-row is-locked" data-requires-source="shodan" title="Add a Shodan key in Settings">
-                <input type="checkbox" name="ip-tool" value="shodan" disabled>
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="internetdb" checked>
                 <span class="tool-main">
-                  <span class="tool-name">Shodan host</span>
-                  <span class="tool-desc">Banners and exposed services</span>
+                  <span class="tool-name">Exposed services</span>
+                  <span class="tool-desc">Keyless ports, hostnames, tags, CVEs</span>
                 </span>
-                <span class="tool-tag" data-source-tag>Key needed</span>
+                <span class="tool-tag">InternetDB</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="tor" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Tor exits</span>
+                  <span class="tool-desc">Is this address a live Tor exit node?</span>
+                </span>
+                <span class="tool-tag">Tor</span>
+              </label>
+
+              <label class="tool-row">
+                <input type="checkbox" name="ip-tool" value="spamhaus" checked>
+                <span class="tool-main">
+                  <span class="tool-name">Spamhaus DROP</span>
+                  <span class="tool-desc">Hijacked and bulletproof-hosting ranges</span>
+                </span>
+                <span class="tool-tag">DROP</span>
               </label>
             </div>
 
             <div class="tool-group">
               <div class="group-head">
                 <h2>Aggressive tools</h2>
-                <span>Sends probes</span>
+                <span>Sends traffic to the target</span>
               </div>
 
-              <label class="tool-row is-locked" data-aggressive>
-                <input type="checkbox" name="ip-tool" value="nmap" disabled>
+              <label class="tool-row is-locked" data-aggressive data-active-source="http">
+                <input type="checkbox" name="ip-tool" value="http" disabled>
                 <span class="tool-main">
-                  <span class="tool-name">Port &amp; service scan</span>
-                  <span class="tool-desc">Common TCP ports with version detection</span>
+                  <span class="tool-name">HTTP probe</span>
+                  <span class="tool-desc">One HTTPS request: status, headers, title, redirect</span>
                 </span>
-                <span class="tool-tag">nmap</span>
+                <span class="tool-tag" data-active-tag>1 request</span>
               </label>
 
-              <label class="tool-row is-locked" data-aggressive>
-                <input type="checkbox" name="ip-tool" value="tls" disabled>
+              <label class="tool-row is-locked" data-aggressive data-active-source="nmap">
+                <input type="checkbox" name="ip-tool" value="nmap" disabled>
                 <span class="tool-main">
-                  <span class="tool-name">TLS probe</span>
-                  <span class="tool-desc">Handshake and certificate details</span>
+                  <span class="tool-name">Port scan</span>
+                  <span class="tool-desc">Top 100 TCP ports, one host, 30s cap</span>
                 </span>
-                <span class="tool-tag">openssl</span>
+                <span class="tool-tag" data-active-tag>nmap</span>
+              </label>
+
+              <label class="tool-row is-locked" data-aggressive data-active-source="nuclei">
+                <input type="checkbox" name="ip-tool" value="nuclei" disabled>
+                <span class="tool-main">
+                  <span class="tool-name">Template checks</span>
+                  <span class="tool-desc">Curated, rate-limited checks, one host</span>
+                </span>
+                <span class="tool-tag" data-active-tag>nuclei</span>
               </label>
             </div>
 
             <div class="scan-foot">
-              <span class="scan-summary" data-scan-summary>3 tools selected</span>
+              <span class="scan-summary" data-scan-summary>6 tools selected</span>
               <button class="btn-primary" type="submit" data-run>Run passive recon</button>
             </div>
 
@@ -508,6 +560,6 @@
     </main>
   </div>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=5"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=8"></script>
 </body>
 </html>

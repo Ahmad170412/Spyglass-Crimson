@@ -48,24 +48,28 @@ def test_credential_file_fallback(tmp_path, monkeypatch):
         store.set("unknown", "x")
 
 
-def test_api_health_and_sources(api, settings):
+def test_api_health_and_sources(api, settings, monkeypatch):
+    monkeypatch.setattr("spyglass.api.shutil.which", lambda name: f"/usr/bin/{name}")
     response = api.get("/api/health")
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["status"] == "ok"
     assert payload["database"] is True
-    assert payload["sources_registered"] == 13
+    assert payload["sources_registered"] == 18
     assert payload["cache"] == {"entries": 0, "live": 0}
 
     response = api.get("/api/sources")
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["summary"] == {
-        "core": 8,
-        "core_implemented": 8,
+        "core": 10,
+        "core_implemented": 10,
         "enrichment": 5,
         "enrichment_implemented": 5,
-        "keyless": 8,
+        "aggressive": 3,
+        "aggressive_implemented": 3,
+        "aggressive_available": 3,
+        "keyless": 10,
     }
     by_id = {item["id"]: item for item in payload["sources"]}
     assert by_id["internetdb"]["implemented"] is True

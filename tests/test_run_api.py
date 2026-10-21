@@ -74,6 +74,9 @@ def keyless_ip_routes(address="1.1.1.1"):
         ("https://stat.ripe.net/data/announced-prefixes/", {"data": {"prefixes": [{"prefix": "1.1.1.0/24"}]}}),
         (CF, {"Status": 0, "Answer": [{"name": "1.1.1.1.in-addr.arpa.", "type": 12, "TTL": 300, "data": "one.one.one.one."}]}),
         (f"{INTERNETDB}/{address}", {"ip": address, "ports": [53], "hostnames": [], "tags": [], "cpes": [], "vulns": []}),
+        ("https://check.torproject.org/torbulkexitlist", "203.0.113.9\n"),
+        ("https://www.spamhaus.org/drop/drop_v4.json", '{"cidr":"203.0.113.0/24","sblid":"SBL-TEST","rir":"arin"}\n'),
+        ("https://www.spamhaus.org/drop/drop_v6.json", ""),
     ]
 
 
@@ -112,7 +115,7 @@ def test_run_endpoints_round_trip(api, settings, fake_http):
     assert detail.status_code == 200
     payload = detail.get_json()
     assert payload["status"] == "complete"
-    assert payload["summary"]["sources_total"] == 8
+    assert payload["summary"]["sources_total"] == 10
     assert payload["summary"]["failed"] == 0
     sources = {s["source"]: s["status"] for s in payload["source_runs"]}
     assert sources["internetdb"] == "ok"

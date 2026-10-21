@@ -30,6 +30,14 @@ class CensysSource(KeyedSource):
     def fetch(self, target: Target, ctx: SourceContext, key):
         import base64
 
+        # Censys bills per lookup, so the run-level cap is enforced here rather
+        # than only documented.
+        cap = ctx.settings.max_censys_lookups
+        used = ctx.counters.get(self.provider, 0)
+        if used >= cap:
+            raise SourceError(f"Censys lookup cap reached ({cap} per run)")
+        ctx.counters[self.provider] = used + 1
+
         # Store "id:secret" as one string; encode to a Basic header.
         token = base64.b64encode(key.encode("utf-8")).decode("ascii")
         params = None

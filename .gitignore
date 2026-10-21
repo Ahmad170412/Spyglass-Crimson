@@ -28,7 +28,7 @@ server.log
 # Freebuff workspace metadata
 .freebuff/
 
-# Local screenshots (documentation assets are committed deliberately under docs/)
+# Local screenshots (documentation assets are committed deliberately under assets/)
 screenshots/
 
 # OS / editor noise

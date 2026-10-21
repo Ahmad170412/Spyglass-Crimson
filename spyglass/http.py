@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from .cache import Cache, make_key
+from .config import VERSION
 
 
 class HttpClient:
@@ -13,7 +14,7 @@ class HttpClient:
         self,
         *,
         timeout: float = 10.0,
-        user_agent: str = "Spyglass-Crimson/0.2",
+        user_agent: str = f"Spyglass-Crimson/{VERSION}",
         retries: int = 1,
     ):
         self.retries = max(0, retries)

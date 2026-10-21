@@ -30,12 +30,14 @@ class SourceContext:
     settings: Settings
     cache: Cache
     http: HttpClient
+    counters: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
 class SourceResult:
     source: str
-    status: str = "ok"  # ok | empty | not_found | partial
+    # Set by adapters; the orchestrator adds "skipped" and "error".
+    status: str = "ok"  # ok | empty | not_found | partial | skipped | error
     data: dict[str, Any] = field(default_factory=dict)
     record_count: int = 0
     errors: dict[str, str] = field(default_factory=dict)

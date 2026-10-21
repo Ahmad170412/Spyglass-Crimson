@@ -57,11 +57,45 @@
       sourceInventory = { sources: [], summary: {} };
     }
     renderOverviewSources();
-    syncKeyGates();
+    syncActiveAvailability();
   }
 
   function sourceById(id) {
     return sourceInventory.sources.find((item) => item.id === id) || null;
+  }
+
+  function aggressiveIds() {
+    const ids = sourceInventory.sources
+      .filter((item) => item.layer === "aggressive")
+      .map((item) => item.id);
+    return new Set(ids.length ? ids : ["http", "nmap", "nuclei"]);
+  }
+
+  function syncActiveAvailability() {
+    document.querySelectorAll("[data-active-source]").forEach((row) => {
+      const id = row.dataset.activeSource;
+      const item = sourceById(id);
+      const available = !item || item.available !== false;
+      const input = row.querySelector("input");
+      const tag = row.querySelector("[data-active-tag]");
+
+      if (input) {
+        input.dataset.available = available ? "1" : "0";
+        if (!available) input.checked = false;
+      }
+      row.classList.toggle("is-unavailable", !available);
+
+      if (tag && item && item.requires_binary) {
+        tag.textContent = available ? item.requires_binary : "not installed";
+      }
+      if (!available && item) {
+        row.title = `Install ${item.missing || item.requires_binary} to enable this module.`;
+      } else {
+        row.removeAttribute("title");
+      }
+    });
+
+    formRefreshers.forEach((refresh) => refresh());
   }
 
   function renderOverviewSources() {
@@ -70,10 +104,12 @@
 
     const core = sourceInventory.sources.filter((item) => item.layer === "core");
     const enrichment = sourceInventory.sources.filter((item) => item.layer === "enrichment");
+    const aggressive = sourceInventory.sources.filter((item) => item.layer === "aggressive");
 
     container.innerHTML = [
       groupMarkup("Core sources", "Keyless", core),
       groupMarkup("Enrichment", "Optional keys", enrichment),
+      groupMarkup("Aggressive", "Authorization required", aggressive),
     ].join("");
 
     const summary = sourceInventory.summary || {};
@@ -81,8 +117,14 @@
     const coreReady = summary.core_implemented || 0;
     const enrTotal = summary.enrichment || 0;
     const enrReady = summary.enrichment_implemented || 0;
+    const aggTotal = summary.aggressive || 0;
+    const aggReady = summary.aggressive_available || 0;
 
-    if (sourceCount) sourceCount.textContent = `${coreReady}/${coreTotal} core · ${enrReady}/${enrTotal} enrichment`;
+    if (sourceCount) {
+      sourceCount.textContent =
+        `${coreReady}/${coreTotal} core · ${enrReady}/${enrTotal} enrichment` +
+        (aggTotal ? ` · ${aggReady}/${aggTotal} aggressive` : "");
+    }
 
     const onCount = Math.max(0, Math.min(meterSegments.length, coreReady));
     meterSegments.forEach((segment, index) => {
@@ -108,13 +150,18 @@
   function rowMarkup(item) {
     const health = item.health || { status: "unknown" };
     let state;
-    if (item.requires_key) {
-      state = health.status === "ok"
-        ? '<span class="status status--active"><span class="status-dot"></span>Active</span>'
-        : '<span class="status status--missing"><span class="status-dot"></span>Key needed</span>' +
-          `<a class="text-link" href="#settings" data-focus="${item.id}Key">Add key</a>`;
-    } else {
+    if (item.requires_key && !keyConfigured(item.id)) {
+      state =
+        '<span class="status status--missing"><span class="status-dot"></span>Key needed</span>' +
+        `<a class="text-link" href="#settings" data-focus="${item.id}Key">Add key</a>`;
+    } else if (item.requires_binary && item.available === false) {
+      state = `<span class="status status--missing" title="Install ${escapeHtml(item.missing || item.requires_binary)}"><span class="status-dot"></span>Not installed</span>`;
+    } else if (health.status === "error") {
+      state = '<span class="status status--error" title="Last run failed"><span class="status-dot"></span>Error</span>';
+    } else if (health.status === "ok") {
       state = '<span class="status status--active"><span class="status-dot"></span>Active</span>';
+    } else {
+      state = '<span class="status status--warn" title="Implemented, not run yet"><span class="status-dot"></span>Ready</span>';
     }
 
     return [
@@ -139,10 +186,17 @@
       credentials = { credentials: [], backend: "file" };
     }
     renderKeyStates();
+    // Key state changes what the overview may claim about keyed sources.
+    renderOverviewSources();
   }
 
   function credFor(provider) {
     return credentials.credentials.find((item) => item.provider === provider) || null;
+  }
+
+  function keyConfigured(provider) {
+    const item = credFor(provider);
+    return Boolean(item && item.configured);
   }
 
   function renderKeyStates() {
@@ -156,21 +210,6 @@
           : '<span class="status-dot"></span>Not configured';
       }
       if (button) button.textContent = item.configured ? "Replace" : "Save key";
-    });
-    syncKeyGates();
-  }
-
-  function syncKeyGates() {
-    document.querySelectorAll("[data-requires-source]").forEach((row) => {
-      const provider = row.dataset.requiresSource;
-      const item = credFor(provider);
-      const configured = Boolean(item && item.configured);
-      const input = row.querySelector("input");
-      const tag = row.querySelector("[data-source-tag]");
-      if (input) input.disabled = !configured;
-      row.classList.toggle("is-locked", !configured);
-      row.title = configured ? "" : `Add a ${provider} key in Settings`;
-      if (tag) tag.textContent = configured ? provider : "Key needed";
     });
   }
 
@@ -325,8 +364,16 @@
 
   /* Run orchestration ---------------------------------------------- */
 
-  async function startRun({ target, mode, layer }) {
-    const payload = await apiSend("/runs", "POST", { target, mode, layer });
+  async function startRun({ target, mode, layer, sources, aggressive, activeSources }) {
+    const payload = await apiSend("/runs", "POST", {
+      target,
+      mode,
+      layer: layer || null,
+      sources: Array.isArray(sources) && sources.length ? sources : null,
+      aggressive: Boolean(aggressive),
+      active_sources:
+        Array.isArray(activeSources) && activeSources.length ? activeSources : null,
+    });
     return payload.id;
   }
 
@@ -353,7 +400,7 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function runAndFollow(form, { target, mode, layer }) {
+  async function runAndFollow(form, { target, mode, layer, sources, aggressive, activeSources }) {
     const runButton = form.querySelector("[data-run]");
     const note = form.querySelector("[data-form-note]");
     const originalLabel = runButton ? runButton.textContent : "";
@@ -369,7 +416,7 @@
     }
 
     try {
-      const runId = await startRun({ target, mode, layer });
+      const runId = await startRun({ target, mode, layer, sources, aggressive, activeSources });
       location.hash = "#results";
       activeRunId = runId;
 
@@ -404,7 +451,7 @@
 
   function setResultsPlaceholder(message) {
     const host = document.querySelector("[data-results-host]");
-    if (host) host.innerHTML = `<p class="form-note">${message}</p>`;
+    if (host) host.innerHTML = `<p class="form-note">${escapeHtml(message)}</p>`;
   }
 
   async function renderResults() {
@@ -446,7 +493,7 @@
       `<h2>${escapeHtml(run.target || "—")}</h2>`,
       `<span class="block-meta">${escapeHtml(run.status || "")}</span>`,
       `</div>`,
-      `<p class="form-note">${summary.complete || 0} complete · ${summary.skipped || 0} skipped · ${summary.failed || 0} failed · ${summary.records || 0} records</p>`,
+      `<p class="form-note">${summary.complete || 0} complete · ${summary.skipped || 0} skipped · ${summary.failed || 0} failed · ${summary.records || 0} record${(summary.records || 0) === 1 ? "" : "s"}</p>`,
     ].join("");
 
     const sourceRows = sourceRuns.map((item) => {
@@ -522,12 +569,22 @@
     return labels[kind] || kind;
   }
 
+  const STATUS_LABELS = {
+    ok: ["Active", "status--active"],
+    complete: ["Complete", "status--active"],
+    partial: ["Partial", "status--warn"],
+    empty: ["Empty", "status--warn"],
+    not_found: ["Not found", "status--idle"],
+    skipped: ["Skipped", "status--idle"],
+    error: ["Error", "status--error"],
+  };
+
   function statusBadge(status) {
-    const good = status === "ok" || status === "complete";
-    const warn = status === "partial" || status === "empty" || status === "not_found";
-    if (good) return '<span class="status status--active"><span class="status-dot"></span>OK</span>';
-    if (warn) return '<span class="status status--warn"><span class="status-dot"></span>Partial</span>';
-    return `<span class="status status--missing"><span class="status-dot"></span>${escapeHtml(status || "—")}</span>`;
+    const [label, className] = STATUS_LABELS[status] || [
+      status || "—",
+      "status--missing",
+    ];
+    return `<span class="status ${className}"><span class="status-dot"></span>${escapeHtml(label)}</span>`;
   }
 
   function escapeHtml(value) {
@@ -539,6 +596,8 @@
   }
 
   /* Scan forms ------------------------------------------------------ */
+
+  const formRefreshers = [];
 
   function setupScan(form) {
     const modeButtons = Array.from(form.querySelectorAll("[data-mode]"));
@@ -594,10 +653,15 @@
 
       aggressiveRows.forEach((row) => {
         const input = row.querySelector("input");
-        const unlocked = aggressive && authorized;
+        const available = input.dataset.available !== "0";
+        const unlocked = aggressive && authorized && available;
         input.disabled = !unlocked;
         row.classList.toggle("is-locked", !unlocked);
-        if (!unlocked) input.checked = false;
+        if (unlocked) {
+          input.checked = true;
+        } else {
+          input.checked = false;
+        }
       });
 
       if (aggressive && !authorized) {
@@ -614,7 +678,7 @@
 
     function mirrorNote(aggressive) {
       modeNote.textContent = aggressive
-        ? "Probes are sent from this machine. Authorization is required."
+        ? "Active modules send traffic from this machine: HTTPS probe, top-100 TCP port scan, and rate-limited templates. Authorization is required."
         : "Public records only. No packets are sent to the target.";
     }
 
@@ -664,24 +728,56 @@
         return;
       }
 
-      if (mode === "aggressive") {
-        showNote(
-          "Aggressive scanning is not wired to a scanner yet. Switch to passive to run now.",
-          true
-        );
-        return;
-      }
-
       const selected = selectedTools();
       if (!selected.length) {
         showNote("Select at least one tool to run.", true);
         return;
       }
 
-      await runAndFollow(form, { target: value, mode: "passive", layer: null });
+      if (mode === "aggressive" && !selected.some((input) => aggressiveIds().has(input.value))) {
+        showNote(
+          "Select at least one active module, or switch to passive mode.",
+          true
+        );
+        return;
+      }
+
+      if (mode === "aggressive") {
+        // The gate is server-side: record the authorization before asking for
+        // an active run, otherwise the API answers 403.
+        try {
+          await apiSend("/authorizations", "POST", {
+            target: value,
+            note: "confirmed in dashboard",
+          });
+        } catch (error) {
+          showNote(error.message, true);
+          return;
+        }
+      }
+
+      // Aggressive ids never travel in `sources`; the `aggressive` flag adds the
+      // module after the server checks the gate.
+      const activeIds = aggressiveIds();
+      const selectedActive = selected
+        .map((input) => input.value)
+        .filter((source) => activeIds.has(source));
+      const passiveSources = selected
+        .map((input) => input.value)
+        .filter((source) => !activeIds.has(source));
+
+      await runAndFollow(form, {
+        target: value,
+        mode: kind === "website" ? "website" : "passive",
+        layer: null,
+        sources: passiveSources.length ? passiveSources : null,
+        aggressive: mode === "aggressive",
+        activeSources: selectedActive,
+      });
     });
 
     refresh();
+    formRefreshers.push(refresh);
   }
 
   function isValidWebsite(value) {

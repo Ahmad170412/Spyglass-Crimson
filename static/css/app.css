@@ -394,6 +394,22 @@ p {
   background: var(--crimson-bright);
 }
 
+.status--error {
+  color: var(--crimson-bright);
+}
+
+.status--error .status-dot {
+  background: var(--crimson);
+}
+
+.status--idle {
+  color: var(--muted-2);
+}
+
+.status--idle .status-dot {
+  background: var(--muted-2);
+}
+
 .source-version {
   color: var(--muted-2);
   font-family: var(--mono);
@@ -797,6 +813,10 @@ p {
 
 .tool-row.is-locked input {
   cursor: not-allowed;
+}
+
+.tool-row.is-unavailable .tool-tag {
+  color: var(--crimson-bright);
 }
 
 .scan-foot {
