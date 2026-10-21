@@ -4,8 +4,8 @@ Thanks for your interest. This project is **passive by default**, with three
 bounded and gated active modules, and the contribution guidelines exist mostly to
 protect that property.
 
-The repository is **private during the beta**, so contribution is by invitation.
-The workflow below still applies to anyone with access.
+Contributions are open: issues and pull requests are welcome. The workflow below
+applies to every contributor.
 
 **Read [ETHICS.md](ETHICS.md) before you start.** If your change would widen the
 active surface, weaken the authorization gate, or help identify private

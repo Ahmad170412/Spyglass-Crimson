@@ -7,8 +7,8 @@
 | `1.0.x` (current) | ✅ |
 | `< 1.0` | ❌ |
 
-The project is in private beta. Security fixes land on the latest release line;
-there is no long-term support branch yet.
+The project is at a stable `1.0` release. Security fixes land on the latest release
+line; there is no long-term support branch yet.
 
 ## Reporting a Vulnerability
 

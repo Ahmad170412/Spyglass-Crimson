@@ -4,44 +4,45 @@
 
 # Spyglass-Crimson
 
-**v1.0.0 “Crystal Pudding” · private beta** — not yet published or announced.
+**v1.0.0 “Crystal Pudding”** · released 2026-10-21 · [release notes](https://github.com/Ahmad170412/Spyglass-Crimson/releases/tag/v1.0.0)
 
-**Passive OSINT for domains and IPs — 18 data sources, three gated active modules when you ask for them.**  
+**Passive OSINT for domains and IPs — 18 data sources, three bounded active modules when you ask for them.**  
 Recon a domain or an IP address from public records alone: registration, DNS, certificate transparency, routing, historical URLs, reputation, and anonymity signals, correlated into one normalised entity graph.
 
 [![CI](https://github.com/Ahmad170412/Spyglass-Crimson/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahmad170412/Spyglass-Crimson/actions)
+[![Release](https://img.shields.io/badge/release-v1.0.0-06b6d4)](https://github.com/Ahmad170412/Spyglass-Crimson/releases/tag/v1.0.0)
 [![License: MIT](https://img.shields.io/badge/license-MIT-06b6d4.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Tests](https://img.shields.io/badge/tests-123%20passed-06b6d4)](https://github.com/Ahmad170412/Spyglass-Crimson/actions)
-[![Status](https://img.shields.io/badge/status-private%20beta-8b5cf6)](CHANGELOG.md)
-[![Version](https://img.shields.io/badge/version-1.0.0-06b6d4)](CHANGELOG.md)
 
-[**Report Bug**](../../issues) · [**Request Feature**](../../issues) · [**Ethics & Acceptable Use**](ETHICS.md)
+[**Report Bug**](https://github.com/Ahmad170412/Spyglass-Crimson/issues/new/choose) · [**Request Feature**](https://github.com/Ahmad170412/Spyglass-Crimson/issues/new/choose) · [**Ethics & Acceptable Use**](ETHICS.md)
 
 </div>
 
 ---
 
-## Project status
+## About this release
 
-Spyglass-Crimson is at **v1.0.0 in private beta**. The repository is not public
-yet: nothing has been announced, there are no support commitments, and the API,
-database schema, and source list may still change before publication. The test
-suite runs on Linux and Windows across Python 3.9–3.12.
+**v1.0.0 “Crystal Pudding”** is the first stable release of Spyglass-Crimson. It
+is a complete local application: passive recon works with no API keys, the
+optional keyed providers degrade to an explicit skip reason, and the active
+modules are gated behind recorded authorization.
 
-What the beta label means in practice:
-
-- **It runs end to end** and is safe to point at infrastructure you own.
-- **The source list is settled** — 10 keyless core sources, 5 optional enrichment
-  providers, and 3 gated active modules. These are the numbers this release is
-  judged on.
+- **18 sources, settled scope** — 10 keyless core sources, 5 optional enrichment
+  providers, and 3 gated active modules.
 - **Active means authorized and bounded.** The optional modules are an HTTPS probe,
   a top-100 TCP port scan (`nmap`), and curated template checks (`nuclei`). They
   run only with a recorded authorization for that exact target, refuse non-public
   address space, and are capped by time, rate, and scope. Port scanning without
   authorization may be illegal — see [ETHICS.md](ETHICS.md).
-- **No authentication.** The server is loopback-only by design; do not expose it.
+- **Local by design.** A single Flask process bound to `127.0.0.1`, no
+  authentication layer, no telemetry. Do not expose it to a network.
+- **Tested on Linux and Windows** across Python 3.9–3.12, plus local verification
+  on newer Python releases.
+
+Release notes and source archives live on the
+[v1.0.0 release page](https://github.com/Ahmad170412/Spyglass-Crimson/releases/tag/v1.0.0).
 
 ## Why Spyglass-Crimson?
 
@@ -52,14 +53,15 @@ What the beta label means in practice:
 - **One local app, no telemetry** — a single Flask process on `127.0.0.1`. It talks to public datasets, and to the target only when you explicitly authorize an active module.
 
 <p align="center">
-  <img src="assets/overview.png" alt="Spyglass-Crimson overview listing the core, enrichment, and aggressive data sources" width="820"/>
+  <img src="assets/overview.png" alt="Spyglass-Crimson overview: 10 keyless core sources, 5 optional enrichment providers, and 3 gated active modules" width="820"/>
 </p>
 
 ---
 
 ## Table of Contents
 
-- [Project status](#project-status)
+- [About this release](#about-this-release)
+- [Why Spyglass-Crimson?](#why-spyglass-crimson)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Features](#features)
@@ -69,6 +71,7 @@ What the beta label means in practice:
 - [Testing](#testing)
 - [Repository Structure](#repository-structure)
 - [Contributing](#contributing)
+- [Security](#security)
 - [Ethics](#ethics)
 - [License](#license)
 
@@ -86,7 +89,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open <http://127.0.0.1:5000>, enter a domain or IP in the **Website** or **IP** tab, and press **Run passive recon**. No API keys required.
+Open <http://127.0.0.1:5000>, enter a domain or IP in the **Website** or **IP** tab, and press **Run passive recon**. No API keys required. The three active modules are opt-in and need `nmap`/`nuclei` on `PATH` — see [Installation](#installation).
 
 ```bash
 # Or drive it from the terminal — same orchestrator, same results
@@ -152,7 +155,7 @@ Three rules shape the whole design:
 | **Key management** | Save, test, and remove provider keys from the dashboard; values never reach the browser |
 | **Run budget** | Configurable wall-clock budget caps a run; exhausted sources are marked, not retried |
 | **Response cache** | Per-source TTL cache in SQLite keeps repeat lookups fast and polite to upstream APIs |
-| **Aggressive gate** | Every active module requires a recorded, unexpired authorization for that exact target |
+| **Active-module gate** | Every active module requires a recorded, unexpired authorization for that exact target |
 
 ### Core sources (no key required)
 
@@ -179,7 +182,7 @@ Three rules shape the whole design:
 | AlienVault OTX | `SPYGLASS_OTX_KEY` | Passive DNS history for subdomain pivots |
 | urlscan.io | `SPYGLASS_URLSCAN_KEY` | Historical page scans and metadata |
 
-### Aggressive modules (authorization required)
+### Active modules (authorization required)
 
 | Source | Sends | What it contributes |
 |---|---|---|
@@ -201,7 +204,7 @@ ranges. See [ETHICS.md](ETHICS.md).
 
 ## Installation
 
-Requires **Python 3.9 or newer** (verified on 3.9 through 3.12) and a POSIX-ish or Windows host. The tool is a local server — there is no PyPI package and nothing to install globally.
+Requires **Python 3.9 or newer** (CI covers 3.9–3.12 on Linux and Windows) and a POSIX-ish or Windows host. The tool is a local server — there is no PyPI package and nothing to install globally.
 
 ### From source (recommended)
 
@@ -219,6 +222,29 @@ python app.py
 ```bash
 pip install -r requirements-dev.txt
 pytest
+```
+
+### Optional: the `nmap` and `nuclei` binaries
+
+Passive recon needs nothing beyond Python. The port-scan and template-check
+modules shell out to external binaries, so they stay disabled — and record a
+skip reason — until the binary is on `PATH`.
+
+```bash
+# macOS
+brew install nmap nuclei
+
+# Debian / Ubuntu
+sudo apt install nmap
+# nuclei: grab a release build from https://github.com/projectdiscovery/nuclei/releases
+
+# Windows: install from https://nmap.org/download.html and the nuclei releases page
+```
+
+Then fetch the template set once (the templates are not bundled):
+
+```bash
+nuclei -update-templates
 ```
 
 ### Choose the port and data directory
@@ -292,7 +318,7 @@ Prefer the dashboard? **Settings → Add key** stores the value in your OS keyri
 ## Usage
 
 <p align="center">
-  <img src="assets/website-form.png" alt="Website recon form with a blank target field, passive and aggressive mode toggle, and per-tool checkboxes" width="820"/>
+  <img src="assets/website-form.png" alt="Website recon form in aggressive mode with the HTTP probe, nmap port scan, and nuclei template checks selected for a target" width="820"/>
 </p>
 
 ### Website recon
@@ -361,12 +387,9 @@ Without a matching, unexpired record the second call returns `403`. The plan gai
 installed. `sources` narrows the passive plan only — active modules are opt-in via
 `aggressive`. Pass `active_sources` to run only some of them, for example
 `{"target":"example.com","aggressive":true,"active_sources":["nmap"]}`.
-Installing the scanners is optional:
-
-```bash
-brew install nmap nuclei     # macOS
-nuclei -update-templates     # one-time template download
-```
+The `nmap` and `nuclei` binaries are optional — install them as described in
+[Installation](#installation); without them the modules report a skip reason
+instead of failing the run.
 
 ### Read the results
 
@@ -381,10 +404,11 @@ curl -s http://127.0.0.1:5000/api/runs/82288a06c4f8/results
 ```json
 {
   "run": { "status": "complete", "target": "example.com" },
-  "summary": { "sources_total": 8, "complete": 5, "failed": 0, "skipped": 3, "records": 28 },
+  "summary": { "sources_total": 8, "complete": 5, "failed": 0, "skipped": 3, "records": 37 },
   "source_runs": [
     { "source": "rdap", "status": "ok", "record_count": 1 },
     { "source": "dns", "status": "ok", "record_count": 11 },
+    { "source": "ct", "status": "partial", "record_count": 21 },
     { "source": "censys", "status": "skipped", "error": "no API key configured" }
   ],
   "entities": [
@@ -496,9 +520,8 @@ Spyglass-Crimson/
 
 ## Contributing
 
-The repository is **private during the beta**, so external contributions are by
-invitation rather than open pull requests. If you have been given access, read
-[ETHICS.md](ETHICS.md) first — contributions that weaken the passive
+Contributions are welcome — issues and pull requests are open. Read
+[ETHICS.md](ETHICS.md) first: contributions that weaken the passive
 default, widen the active modules beyond their documented bounds, or bypass the
 authorization gate will be declined.
 
@@ -509,6 +532,14 @@ authorization gate will be declined.
 5. Open a pull request describing what changed and why.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guidelines.
+
+---
+
+## Security
+
+Found a vulnerability? Please report it privately as described in
+[SECURITY.md](SECURITY.md) rather than opening a public issue. Please include
+reproduction steps and the affected version.
 
 ---
 

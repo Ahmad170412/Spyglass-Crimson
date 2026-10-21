@@ -497,13 +497,15 @@
     ].join("");
 
     const sourceRows = sourceRuns.map((item) => {
+      const meta = sourceById(item.source);
+      const label = meta && meta.label ? meta.label : item.source;
       const detail = item.error
         ? escapeHtml(item.error)
         : `${item.record_count || 0} record${(item.record_count || 0) === 1 ? "" : "s"}`;
       return [
         `<div class="source-row">`,
         `<div class="source-main">`,
-        `<span class="source-name">${escapeHtml(item.source)}</span>`,
+        `<span class="source-name">${escapeHtml(label)}</span>`,
         `<span class="source-detail">${detail}</span>`,
         `</div>`,
         `<span class="source-state">${statusBadge(item.status)}</span>`,

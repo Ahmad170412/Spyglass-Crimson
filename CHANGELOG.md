@@ -15,11 +15,10 @@ Nothing yet.
 
 ## [1.0.0] — 2026-10-21 — “Crystal Pudding”
 
-The first release, published as a **private beta**. Passive OSINT for domains and
+The first stable release. Passive OSINT for domains and
 IP addresses, with a local dashboard, a REST API, and 18 registered data sources.
 
-**Beta scope:** the repository is not public yet, and the API, schema, and source
-list may change before it is. Active capability is limited to three gated,
+**Scope:** active capability is limited to three gated,
 bounded modules — an HTTP probe, a top-100 TCP port scan, and curated template
 checks — each requiring a recorded authorization.
 
@@ -105,8 +104,8 @@ checks — each requiring a recorded authorization.
 - `ETHICS.md` rewritten for the bounded active modules: what each one does, what
   it refuses to do, and the risk the operator accepts.
 - `SECURITY.md` documents the Host-header guard and the active-module boundaries.
-- `README.md` — private-beta framing, all 18 sources, and the new configuration
-  and API parameters.
+- `README.md` — all 18 sources, the new configuration and API parameters, and
+  the install instructions for the optional `nmap` and `nuclei` binaries.
 
 ---
 
