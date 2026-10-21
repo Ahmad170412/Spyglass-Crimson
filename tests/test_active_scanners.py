@@ -52,6 +52,15 @@ NUCLEI_JSONL = "\n".join(
 )
 
 
+@pytest.fixture(autouse=True)
+def fake_binaries(monkeypatch):
+    """Scanner tests must not depend on nmap/nuclei being installed in CI."""
+    monkeypatch.setattr(
+        "spyglass.sources._active.shutil.which",
+        lambda name: f"/usr/local/bin/{name}",
+    )
+
+
 @pytest.fixture
 def public_dns(monkeypatch):
     monkeypatch.setattr(
